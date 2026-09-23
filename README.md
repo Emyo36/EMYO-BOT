@@ -15,7 +15,7 @@ pensé pour l'**or (XAUUSD)**, le **Bitcoin (BTCUSD)** et le **NASDAQ (NAS100 / 
    l'EMA 20, ou sur les deux.
 3. **3 positions ouvertes ensemble** : à chaque signal, le bot ouvre 3 positions avec
    le même Stop Loss et des Take Profit échelonnés (1 / 1,5 / 2 ATR). Chaque position
-   vise `TargetProfitMoney` (3 € par défaut) : le lot de chacune est calculé pour ça.
+   vise `TargetProfitMoney` (2 € par défaut) : le lot de chacune est calculé pour ça.
 4. **Protection** : le break-even protège les positions dès mi-chemin du premier TP ;
    tout est fermé si l'EMA 20 repasse de l'autre côté de l'EMA 50.
 
@@ -44,29 +44,25 @@ dernier panier peut donc perdre : la perte maximale reste celle d'un panier, mê
 Ce qui reste actif quel que soit le style : la session américaine, le filtre de spread,
 le break-even et l'arrêt du jour à −3 % (`MaxDailyLossPercent`).
 
-## Gain fixe en euros
+## Petits gains cumulés
 
-Avec `TargetProfitMoney = 3`, chaque trade vise 3 € (dans la devise du compte),
-quel que soit le marché : le bot adapte le lot à la distance du TP. Le journal
-(onglet Experts) affiche à chaque trade le gain visé et la perte maximale.
+L'idée : beaucoup de petits gains répétés plutôt que de gros coups. Avec
+`TargetProfitMoney = 2`, chaque position vise 2 € (dans la devise du compte), quel que
+soit le marché : le bot adapte le lot à la distance du TP. On peut descendre à 1 €.
 
-Attention au rapport gain / perte : les 3 positions partagent le même Stop Loss
-(1,2 ATR). Si le marché repart contre vous avant le break-even, les 3 sont perdues
-ensemble : environ 3,60 € + 2,40 € + 1,80 € ≈ **7,80 € de perte** pour **9 € de gain**
-si les 3 TP sont atteints. C'est le point à vérifier en backtest.
+- Si le lot minimum du courtier rapporte déjà plus que l'objectif, le bot le prend quand
+  même tant que le gain reste sous `MaxProfitAtMinLot` (5 €), au lieu de rater le trade.
+- Un compteur sur le graphique affiche la session, les positions ouvertes, le nombre de
+  positions du jour et le **gain cumulé du jour**.
 
-Si le lot minimum du courtier donne déjà un gain supérieur à l'objectif, le bot ne
-prend pas le trade (plutôt que de risquer plus que prévu) et l'indique dans le journal.
+Attention : plus l'objectif est petit, plus le spread et les commissions en mangent une
+part. Sur un compte avec commission, un gain brut de 1 € peut devenir 0,50 € net. Le gain
+affiché par le compteur est net (commissions et swaps compris) : c'est lui qui compte.
 
-## Distances en ATR
-
-L'or, le Bitcoin et le NASDAQ n'ont pas de « pip » comparable au forex. Toutes les
-distances (SL, TP, break-even, trailing, repli) sont donc exprimées en **multiples de
-l'ATR M1**, le mouvement moyen d'une bougie. Le bot s'adapte ainsi tout seul à chaque
-marché et à sa volatilité du moment. Exemple : si l'ATR de l'or vaut 0,80 $,
-`StopLoss = 1.5` place le SL à 1,20 $ du prix d'entrée.
-
-Le mode `DistanceMode = Pips` reste disponible pour le forex.
+Les 3 positions d'un signal partagent le même Stop Loss (1,2 ATR). Si le marché repart
+contre vous avant le break-even, les 3 sont perdues ensemble : environ 2,40 € + 1,60 € +
+1,20 € ≈ **5,20 € de perte** pour **6 € de gain** si les 3 TP sont atteints. Il faut donc
+gagner nettement plus souvent que perdre : c'est le point à vérifier en backtest.
 
 ## Session américaine
 
@@ -99,8 +95,10 @@ réglages par défaut. Le lot est calculé automatiquement par `TargetProfitMone
 
 | Paramètre | Rôle |
 |---|---|
-| `TargetProfitMoney` | Gain visé par trade en devise du compte ; le lot est calculé pour l'atteindre au TP |
+| `TargetProfitMoney` | Gain visé par position (2 €) ; le lot est calculé pour l'atteindre au TP |
 | `RiskPercent` / `Lots` | Si `TargetProfitMoney = 0` : lot pour risquer ce % du solde, sinon lot fixe |
+| `MaxProfitAtMinLot` | Gain max. accepté quand le lot minimum dépasse l'objectif |
+| `ShowPanel` | Affiche le compteur de gains sur le graphique |
 | `MaxLots` | Lot maximum par position, quel que soit le calcul |
 | `TradingStyle` | Agressif (défaut) ou Normal ; en agressif, remplace les réglages indiqués plus haut |
 | `AddOnlyWhenProtected` | N'ajoute un panier que si les positions ouvertes sont au break-even |

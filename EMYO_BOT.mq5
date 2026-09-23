@@ -3,7 +3,7 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.81"
+#property version   "1.90"
 
 #include <Trade\Trade.mqh>
 
@@ -38,7 +38,8 @@ input group "Style"
 input ENUM_TRADING_STYLE TradingStyle = STYLE_AGGRESSIVE;
 
 input group "Taille des positions"
-input double TargetProfitMoney  = 3;     // Gain visé par trade, en devise du compte (0 = off)
+input double TargetProfitMoney  = 2;     // Gain visé par position, en devise du compte (0 = off)
+input double MaxProfitAtMinLot  = 5;     // Si le lot minimum dépasse l'objectif : accepté jusqu'à ce gain
 input double RiskPercent        = 0;     // % du solde risqué par trade (si TargetProfitMoney = 0)
 input double Lots               = 0.01;  // Lot fixe (si TargetProfitMoney = 0 et RiskPercent = 0)
 input double MaxLots            = 1.0;   // Lot maximum autorisé par position, quel que soit le calcul
@@ -100,6 +101,7 @@ input double MaxDailyLossPercent = 3;    // Arrêt du jour après cette perte en
 input double DailyProfitTargetMoney = 0; // Arrêt du jour une fois ce gain atteint (0 = off)
 input ulong  MagicNumber        = 360036;
 input bool   AutoCloseOnStop    = true;  // Fermer les positions quand le bot est retiré
+input bool   ShowPanel          = true;  // Afficher le compteur de gains sur le graphique
 
 //---------------------- VARIABLES GLOBALES --------------------------
 CTrade   trade;
@@ -155,7 +157,7 @@ int OnInit()
       StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
       NyStartHour < 0 || NyStartHour > 23 || NyEndHour < 0 || NyEndHour > 23 ||
       NyStartMinute < 0 || NyStartMinute > 59 || NyEndMinute < 0 || NyEndMinute > 59 ||
-      Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxLots <= 0 ||
+      Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxProfitAtMinLot < 0 || MaxLots <= 0 ||
       (TargetProfitMoney > 0 && TakeProfit <= 0) ||
       TradesPerSignal < 1 || MaxOpenPositions < 1 || TakeProfitStep < 0 ||
       MomentumLookback < 1 || MomentumBody < 0 ||
@@ -189,6 +191,7 @@ int OnInit()
          " | heure de New York : ",
          TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
          " | session ", (IsTradingHour() ? "ouverte" : "fermée"));
+   UpdatePanel();
    return(INIT_SUCCEEDED);
 }
 
@@ -209,6 +212,7 @@ void OnDeinit(const int reason)
    if(rsiHandle  != INVALID_HANDLE) IndicatorRelease(rsiHandle);
    if(atrHandle  != INVALID_HANDLE) IndicatorRelease(atrHandle);
 
+   Comment("");
    Print("Bot arrêté");
 }
 
@@ -508,9 +512,15 @@ double CalculateLots(double slDistance, double tpDistance)
    lots = MathFloor(lots / lotStep + 1e-9) * lotStep;
    int lotDigits = (int)MathMax(0, MathCeil(-MathLog10(lotStep)));
 
+   // Objectif trop petit pour le lot minimum du courtier : on prend le lot
+   // minimum tant que le gain visé reste raisonnable (MaxProfitAtMinLot)
+   if(lots < minLot && TargetProfitMoney > 0 &&
+      MoneyPerLot(tpDistance) * minLot <= MaxProfitAtMinLot)
+      lots = minLot;
+
    if(lots < minLot)
    {
-      // On n'augmente pas le lot tout seul : le gain et la perte dépasseraient l'objectif
+      // On n'augmente pas davantage le lot : le gain et la perte dépasseraient l'objectif
       Print("Lot calculé trop petit (", lots, "), minimum du courtier : ", minLot,
             " | gain au TP avec le lot minimum : ",
             DoubleToString(MoneyPerLot(tpDistance) * minLot, 2), " ", AccountInfoString(ACCOUNT_CURRENCY));
@@ -718,6 +728,36 @@ int GetTrend(const double &fast[], const double &slow[], const double &close[])
 }
 
 //+------------------------------------------------------------------+
+// Compteur affiché en haut à gauche du graphique
+void UpdatePanel()
+{
+   if(!ShowPanel)
+      return;
+
+   int    tradesToday = 0;
+   double profitToday = 0;
+   GetTodayStats(tradesToday, profitToday);
+
+   int direction = 0;
+   int openCount = CountOpenPositions(direction);
+   string currency = AccountInfoString(ACCOUNT_CURRENCY);
+
+   Comment("EMYO BOT  |  ", _Symbol, "  |  ",
+           (TradingStyle == STYLE_AGGRESSIVE ? "AGRESSIF" : "normal"), "\n",
+           "Session : ", (IsTradingHour() ? "OUVERTE" : "fermée"),
+           "  (New York ", TimeToString(NewYorkTime(), TIME_MINUTES), ")\n",
+           "Positions ouvertes : ", openCount,
+           "  |  en cours : ", DoubleToString(FloatingProfit(), 2), " ", currency, "\n",
+           "Positions du jour : ", tradesToday,
+           "  |  gain du jour : ", DoubleToString(profitToday, 2), " ", currency);
+}
+
+void OnTrade()
+{
+   UpdatePanel();
+}
+
+//+------------------------------------------------------------------+
 void OnTick()
 {
    // Fin de session : on ne garde aucune position en dehors
@@ -737,6 +777,8 @@ void OnTick()
    // Les nouvelles entrées : une fois par bougie M1 clôturée
    if(!IsNewBar())
       return;
+
+   UpdatePanel();
 
    // Index 1 = dernière bougie clôturée, index 2 = celle d'avant, etc.
    int bars = (int)MathMax(4, gMomentumLookback + 2);
