@@ -23,6 +23,27 @@ Jamais d'achats et de ventes en même temps sur un même symbole. Dès que des p
 se libèrent (`MaxOpenPositions`), le bot reprend le train au signal suivant.
 Objectif : beaucoup de petits gains répétés.
 
+## Style agressif (par défaut)
+
+Avec `TradingStyle = Agressif`, le bot cherche un maximum d'occasions :
+
+| Réglage | Normal | Agressif |
+|---|---|---|
+| Entrées | Momentum | Momentum **et** replis sur l'EMA 20 |
+| Confirmation M15 | Oui | Non : réagit directement à la tendance M1 |
+| Pente de l'EMA 50 exigée | Oui | Non : EMA 20 / EMA 50 alignées suffisent |
+| Bougie de momentum | Corps ≥ 0,8 ATR, casse 5 bougies, RSI > 55 | Corps ≥ 0,5 ATR, casse 3 bougies, RSI > 52 |
+| Positions ouvertes max. | 3 | 9 (jusqu'à 3 paniers de 3) |
+| Positions par jour | 60 | Illimité |
+
+**Ajout de positions (pyramidage)** : un nouveau panier de 3 n'est ouvert que si toutes
+les positions déjà ouvertes sont passées au break-even (`AddOnlyWhenProtected`). Seul le
+dernier panier peut donc perdre : la perte maximale reste celle d'un panier, même avec
+9 positions ouvertes.
+
+Ce qui reste actif quel que soit le style : la session américaine, le filtre de spread,
+le break-even et l'arrêt du jour à −3 % (`MaxDailyLossPercent`).
+
 ## Gain fixe en euros
 
 Avec `TargetProfitMoney = 3`, chaque trade vise 3 € (dans la devise du compte),
@@ -81,6 +102,8 @@ réglages par défaut. Le lot est calculé automatiquement par `TargetProfitMone
 | `TargetProfitMoney` | Gain visé par trade en devise du compte ; le lot est calculé pour l'atteindre au TP |
 | `RiskPercent` / `Lots` | Si `TargetProfitMoney = 0` : lot pour risquer ce % du solde, sinon lot fixe |
 | `MaxLots` | Lot maximum par position, quel que soit le calcul |
+| `TradingStyle` | Agressif (défaut) ou Normal ; en agressif, remplace les réglages indiqués plus haut |
+| `AddOnlyWhenProtected` | N'ajoute un panier que si les positions ouvertes sont au break-even |
 | `TradesPerSignal` | Positions ouvertes ensemble à chaque signal (3) |
 | `MaxOpenPositions` | Positions ouvertes en même temps au maximum sur le symbole (3) |
 | `TakeProfitStep` | Écart entre les TP des positions, en ATR |

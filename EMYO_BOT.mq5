@@ -3,9 +3,15 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.70"
+#property version   "1.80"
 
 #include <Trade\Trade.mqh>
+
+enum ENUM_TRADING_STYLE
+{
+   STYLE_NORMAL     = 0,  // Normal (réglages ci-dessous)
+   STYLE_AGGRESSIVE = 1   // Agressif (plus d'entrées, plus de positions)
+};
 
 enum ENUM_ENTRY_MODE
 {
@@ -28,6 +34,9 @@ enum ENUM_DISTANCE_MODE
 };
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
+input group "Style"
+input ENUM_TRADING_STYLE TradingStyle = STYLE_AGGRESSIVE;
+
 input group "Taille des positions"
 input double TargetProfitMoney  = 3;     // Gain visé par trade, en devise du compte (0 = off)
 input double RiskPercent        = 0;     // % du solde risqué par trade (si TargetProfitMoney = 0)
@@ -37,6 +46,7 @@ input double MaxLots            = 1.0;   // Lot maximum autorisé par position, 
 input group "Positions simultanées"
 input int    TradesPerSignal    = 3;     // Positions ouvertes ensemble à chaque signal
 input int    MaxOpenPositions   = 3;     // Positions ouvertes en même temps au maximum (ce symbole)
+input bool   AddOnlyWhenProtected = true; // Nouvelles positions seulement si les ouvertes sont au break-even
 input double TakeProfitStep     = 0.5;   // Écart entre les TP des positions (en ATR) : 1 / 1.5 / 2...
 
 input group "Distances (en ATR, ou en pips si mode Pips)"
@@ -100,6 +110,43 @@ int      rsiHandle   = INVALID_HANDLE;
 int      atrHandle   = INVALID_HANDLE;
 datetime lastBarTime = 0;
 
+// Réglages effectifs : ceux des paramètres, ou ceux du style agressif
+ENUM_ENTRY_MODE gEntryMode;
+bool            gUseHigherTimeframe;
+bool            gRequireSlope;
+int             gMomentumLookback;
+double          gMomentumBody;
+double          gMomentumCloseRatio;
+double          gRsiMomentumLevel;
+int             gMaxOpenPositions;
+int             gMaxTradesPerDay;
+
+void ApplyTradingStyle()
+{
+   gEntryMode          = EntryMode;
+   gUseHigherTimeframe = UseHigherTimeframe;
+   gRequireSlope       = true;
+   gMomentumLookback   = MomentumLookback;
+   gMomentumBody       = MomentumBody;
+   gMomentumCloseRatio = MomentumCloseRatio;
+   gRsiMomentumLevel   = RsiMomentumLevel;
+   gMaxOpenPositions   = MaxOpenPositions;
+   gMaxTradesPerDay    = MaxTradesPerDay;
+
+   if(TradingStyle == STYLE_AGGRESSIVE)
+   {
+      gEntryMode          = ENTRY_BOTH;  // momentum ET replis
+      gUseHigherTimeframe = false;       // réagit à la tendance M1 sans attendre le M15
+      gRequireSlope       = false;       // EMA 20 / EMA 50 alignées suffisent
+      gMomentumLookback   = 3;           // cassure des 3 dernières bougies
+      gMomentumBody       = 0.5;         // bougies moins grandes acceptées
+      gMomentumCloseRatio = 0.6;
+      gRsiMomentumLevel   = 52;
+      gMaxOpenPositions   = (int)MathMax(MaxOpenPositions, 9);  // jusqu'à 3 paniers de 3
+      gMaxTradesPerDay    = 0;           // pas de limite de nombre
+   }
+}
+
 //+------------------------------------------------------------------+
 int OnInit()
 {
@@ -118,6 +165,8 @@ int OnInit()
       return(INIT_PARAMETERS_INCORRECT);
    }
 
+   ApplyTradingStyle();
+
    fastHandle = iMA(_Symbol, PERIOD_M1, FastEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    slowHandle = iMA(_Symbol, PERIOD_M1, SlowEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    htfHandle  = iMA(_Symbol, TrendTimeframe, TrendEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
@@ -135,7 +184,9 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   Print("Bot lancé sur ", _Symbol, " | heure de New York : ",
+   Print("Bot lancé sur ", _Symbol,
+         " | style ", TradingStyle == STYLE_AGGRESSIVE ? "AGRESSIF" : "normal",
+         " | heure de New York : ",
          TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
          " | session ", IsTradingHour() ? "ouverte" : "fermée");
    return(INIT_SUCCEEDED);
@@ -341,6 +392,34 @@ void GetTodayStats(int &tradesToday, double &profitToday)
                    + HistoryDealGetDouble(deal, DEAL_SWAP)
                    + HistoryDealGetDouble(deal, DEAL_COMMISSION);
    }
+}
+
+// Vrai si toutes les positions du bot ont leur SL au prix d'entrée ou au-delà
+// (elles ne peuvent plus perdre)
+bool AllPositionsProtected()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol ||
+         PositionGetInteger(POSITION_MAGIC) != (long)MagicNumber)
+         continue;
+
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl        = PositionGetDouble(POSITION_SL);
+
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+      {
+         if(sl < openPrice)
+            return false;
+      }
+      else if(sl == 0 || sl > openPrice)
+         return false;
+   }
+   return true;
 }
 
 // Nombre de positions du bot sur ce symbole ; 'direction' reçoit
@@ -599,12 +678,12 @@ int GetTrend(const double &fast[], const double &slow[], const double &close[])
 {
    int trend = 0;
 
-   if(fast[1] > slow[1] && slow[1] > slow[3] && close[1] > slow[1])
+   if(fast[1] > slow[1] && (!gRequireSlope || slow[1] > slow[3]) && close[1] > slow[1])
       trend = 1;
-   else if(fast[1] < slow[1] && slow[1] < slow[3] && close[1] < slow[1])
+   else if(fast[1] < slow[1] && (!gRequireSlope || slow[1] < slow[3]) && close[1] < slow[1])
       trend = -1;
 
-   if(trend == 0 || !UseHigherTimeframe)
+   if(trend == 0 || !gUseHigherTimeframe)
       return trend;
 
    double htfEma[], htfClose[];
@@ -642,7 +721,7 @@ void OnTick()
       return;
 
    // Index 1 = dernière bougie clôturée, index 2 = celle d'avant, etc.
-   int bars = MathMax(4, MomentumLookback + 2);
+   int bars = MathMax(4, gMomentumLookback + 2);
 
    double fast[], slow[], rsi[], open[], high[], low[], close[];
    ArraySetAsSeries(fast, true);
@@ -674,7 +753,7 @@ void OnTick()
 
    int openDirection = 0;
    int openCount     = CountOpenPositions(openDirection);
-   int room          = MaxOpenPositions - openCount;
+   int room          = gMaxOpenPositions - openCount;
    if(room <= 0)
       return;
 
@@ -682,7 +761,7 @@ void OnTick()
    double profitToday = 0;
    GetTodayStats(tradesToday, profitToday);
 
-   if(MaxTradesPerDay > 0 && tradesToday >= MaxTradesPerDay)
+   if(gMaxTradesPerDay > 0 && tradesToday >= gMaxTradesPerDay)
       return;
 
    if(MaxDailyLossPercent > 0 &&
@@ -700,6 +779,10 @@ void OnTick()
    if(openDirection != 0 && openDirection != trend)
       return;
 
+   // On n'ajoute un panier que si les positions déjà ouvertes ne peuvent plus perdre
+   if(openCount > 0 && AddOnlyWhenProtected && !AllPositionsProtected())
+      return;
+
    double unit = DistanceUnit();
    if(unit <= 0)
       return;
@@ -709,32 +792,32 @@ void OnTick()
 
    // Momentum : bougie forte dans le sens de la tendance, qui clôture près
    // de son extrême et casse le plus haut / plus bas des dernières bougies.
-   if(EntryMode == ENTRY_MOMENTUM || EntryMode == ENTRY_BOTH)
+   if(gEntryMode == ENTRY_MOMENTUM || gEntryMode == ENTRY_BOTH)
    {
       double range     = high[1] - low[1];
-      double priorHigh = high[ArrayMaximum(high, 2, MomentumLookback)];
-      double priorLow  = low [ArrayMinimum(low,  2, MomentumLookback)];
+      double priorHigh = high[ArrayMaximum(high, 2, gMomentumLookback)];
+      double priorLow  = low [ArrayMinimum(low,  2, gMomentumLookback)];
 
       if(range > 0)
       {
          buySignal = buySignal ||
                      (trend == 1 &&
-                      close[1] - open[1] >= MomentumBody * unit &&
-                      (close[1] - low[1]) / range >= MomentumCloseRatio &&
+                      close[1] - open[1] >= gMomentumBody * unit &&
+                      (close[1] - low[1]) / range >= gMomentumCloseRatio &&
                       close[1] > priorHigh &&
-                      rsi[1] > RsiMomentumLevel && rsi[1] > rsi[2]);
+                      rsi[1] > gRsiMomentumLevel && rsi[1] > rsi[2]);
 
          sellSignal = sellSignal ||
                       (trend == -1 &&
-                       open[1] - close[1] >= MomentumBody * unit &&
-                       (high[1] - close[1]) / range >= MomentumCloseRatio &&
+                       open[1] - close[1] >= gMomentumBody * unit &&
+                       (high[1] - close[1]) / range >= gMomentumCloseRatio &&
                        close[1] < priorLow &&
-                       rsi[1] < 100 - RsiMomentumLevel && rsi[1] < rsi[2]);
+                       rsi[1] < 100 - gRsiMomentumLevel && rsi[1] < rsi[2]);
       }
    }
 
    // Repli : le prix revient toucher l'EMA rapide puis repart dans la tendance
-   if(EntryMode == ENTRY_PULLBACK || EntryMode == ENTRY_BOTH)
+   if(gEntryMode == ENTRY_PULLBACK || gEntryMode == ENTRY_BOTH)
    {
       double tolerance = PullbackTolerance * unit;
 
@@ -754,8 +837,8 @@ void OnTick()
    }
 
    int count = MathMin(TradesPerSignal, room);
-   if(MaxTradesPerDay > 0)
-      count = MathMin(count, MaxTradesPerDay - tradesToday);
+   if(gMaxTradesPerDay > 0)
+      count = MathMin(count, gMaxTradesPerDay - tradesToday);
 
    if(buySignal)
       OpenBasket(POSITION_TYPE_BUY, unit, count);
