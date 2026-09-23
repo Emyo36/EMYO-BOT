@@ -3,7 +3,7 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.80"
+#property version   "1.81"
 
 #include <Trade\Trade.mqh>
 
@@ -185,10 +185,10 @@ int OnInit()
    trade.SetTypeFillingBySymbol(_Symbol);
 
    Print("Bot lancé sur ", _Symbol,
-         " | style ", TradingStyle == STYLE_AGGRESSIVE ? "AGRESSIF" : "normal",
+         " | style ", (TradingStyle == STYLE_AGGRESSIVE ? "AGRESSIF" : "normal"),
          " | heure de New York : ",
          TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
-         " | session ", IsTradingHour() ? "ouverte" : "fermée");
+         " | session ", (IsTradingHour() ? "ouverte" : "fermée"));
    return(INIT_SUCCEEDED);
 }
 
@@ -392,6 +392,24 @@ void GetTodayStats(int &tradesToday, double &profitToday)
                    + HistoryDealGetDouble(deal, DEAL_SWAP)
                    + HistoryDealGetDouble(deal, DEAL_COMMISSION);
    }
+}
+
+// Gain ou perte en cours des positions ouvertes du bot sur ce symbole
+double FloatingProfit()
+{
+   double total = 0;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+
+      if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
+         PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber)
+         total += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+   }
+   return total;
 }
 
 // Vrai si toutes les positions du bot ont leur SL au prix d'entrée ou au-delà
@@ -721,7 +739,7 @@ void OnTick()
       return;
 
    // Index 1 = dernière bougie clôturée, index 2 = celle d'avant, etc.
-   int bars = MathMax(4, gMomentumLookback + 2);
+   int bars = (int)MathMax(4, gMomentumLookback + 2);
 
    double fast[], slow[], rsi[], open[], high[], low[], close[];
    ArraySetAsSeries(fast, true);
@@ -764,8 +782,9 @@ void OnTick()
    if(gMaxTradesPerDay > 0 && tradesToday >= gMaxTradesPerDay)
       return;
 
+   // Perte du jour = trades fermés + positions encore ouvertes
    if(MaxDailyLossPercent > 0 &&
-      profitToday <= -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)
+      profitToday + FloatingProfit() <= -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)
       return;
 
    if(DailyProfitTargetMoney > 0 && profitToday >= DailyProfitTargetMoney)
@@ -836,9 +855,9 @@ void OnTick()
                     rsi[1] < RsiMidLevel);
    }
 
-   int count = MathMin(TradesPerSignal, room);
+   int count = (int)MathMin(TradesPerSignal, room);
    if(gMaxTradesPerDay > 0)
-      count = MathMin(count, gMaxTradesPerDay - tradesToday);
+      count = (int)MathMin(count, gMaxTradesPerDay - tradesToday);
 
    if(buySignal)
       OpenBasket(POSITION_TYPE_BUY, unit, count);
