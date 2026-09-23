@@ -1,8 +1,8 @@
 //+------------------------------------------------------------------+
-//|                     EMYO BOT SCALPING - BASE                    |
+//|              EMYO BOT - SCALPING M1 SUIVI DE TENDANCE             |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.20"
+#property version   "1.30"
 
 #include <Trade\Trade.mqh>
 
@@ -16,14 +16,21 @@ input double StopLossPips       = 10;
 input double TakeProfitPips     = 30;
 input double BreakEvenPips      = 8;     // Gain qui déclenche le break-even (0 = off)
 input double BreakEvenLockPips  = 1;     // Pips sécurisés au break-even
-input double TrailingStopPips   = 0;     // Distance du trailing stop (0 = off)
+input double TrailingStopPips   = 10;    // Distance du trailing stop (0 = off)
 input double TrailingStepPips   = 1;     // Déplacement minimum du trailing
 
-input group "Signaux"
-input int    MaPeriod           = 50;    // Période de la moyenne mobile
+input group "Tendance"
+input int             FastEmaPeriod     = 20;          // EMA rapide M1 (zone de repli)
+input int             SlowEmaPeriod     = 50;          // EMA lente M1 (direction)
+input bool            UseHigherTimeframe = true;       // Confirmer avec une unité de temps supérieure
+input ENUM_TIMEFRAMES TrendTimeframe    = PERIOD_M15;  // Unité de temps de confirmation
+input int             TrendEmaPeriod    = 50;          // EMA de confirmation
+input bool            CloseOnTrendReversal = true;     // Fermer si la tendance M1 s'inverse
+
+input group "Entrée"
+input double PullbackTolerancePips = 1;  // Distance max. à l'EMA rapide pour valider le repli
 input int    RsiPeriod          = 14;    // Période du RSI
-input double RsiOversold        = 30;    // Seuil de survente
-input double RsiOverbought      = 70;    // Seuil de surachat
+input double RsiMidLevel        = 50;    // RSI > niveau pour acheter, < niveau pour vendre
 
 input group "Filtres"
 input double MaxSpreadPoints    = 60;    // Spread maximum autorisé (points)
@@ -39,25 +46,31 @@ input bool   AutoCloseOnStop    = true;  // Fermer les positions quand le bot es
 
 //---------------------- VARIABLES GLOBALES --------------------------
 CTrade   trade;
-int      maHandle    = INVALID_HANDLE;
+int      fastHandle  = INVALID_HANDLE;
+int      slowHandle  = INVALID_HANDLE;
+int      htfHandle   = INVALID_HANDLE;
 int      rsiHandle   = INVALID_HANDLE;
 datetime lastBarTime = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(StopLossPips <= 0 || TakeProfitPips <= 0 || MaPeriod <= 0 || RsiPeriod <= 0 ||
-      RsiOversold >= RsiOverbought || StartHour < 0 || StartHour > 23 ||
+   if(StopLossPips <= 0 || TakeProfitPips <= 0 || RsiPeriod <= 0 ||
+      FastEmaPeriod <= 0 || SlowEmaPeriod <= FastEmaPeriod || TrendEmaPeriod <= 0 ||
+      StartHour < 0 || StartHour > 23 ||
       EndHour < 0 || EndHour > 23 || Lots <= 0 || RiskPercent < 0)
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
    }
 
-   maHandle  = iMA(_Symbol, PERIOD_M1, MaPeriod, 0, MODE_SMA, PRICE_CLOSE);
-   rsiHandle = iRSI(_Symbol, PERIOD_M1, RsiPeriod, PRICE_CLOSE);
+   fastHandle = iMA(_Symbol, PERIOD_M1, FastEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   slowHandle = iMA(_Symbol, PERIOD_M1, SlowEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   htfHandle  = iMA(_Symbol, TrendTimeframe, TrendEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   rsiHandle  = iRSI(_Symbol, PERIOD_M1, RsiPeriod, PRICE_CLOSE);
 
-   if(maHandle == INVALID_HANDLE || rsiHandle == INVALID_HANDLE)
+   if(fastHandle == INVALID_HANDLE || slowHandle == INVALID_HANDLE ||
+      htfHandle  == INVALID_HANDLE || rsiHandle  == INVALID_HANDLE)
    {
       Print("Erreur : impossible de créer les indicateurs");
       return(INIT_FAILED);
@@ -82,8 +95,10 @@ void OnDeinit(const int reason)
       reason != REASON_RECOMPILE)
       CloseAllTrades();
 
-   if(maHandle  != INVALID_HANDLE) IndicatorRelease(maHandle);
-   if(rsiHandle != INVALID_HANDLE) IndicatorRelease(rsiHandle);
+   if(fastHandle != INVALID_HANDLE) IndicatorRelease(fastHandle);
+   if(slowHandle != INVALID_HANDLE) IndicatorRelease(slowHandle);
+   if(htfHandle  != INVALID_HANDLE) IndicatorRelease(htfHandle);
+   if(rsiHandle  != INVALID_HANDLE) IndicatorRelease(rsiHandle);
 
    Print("Bot arrêté");
 }
@@ -345,8 +360,9 @@ void ManagePositions()
 }
 
 //+------------------------------------------------------------------+
-// Ferme uniquement les positions ouvertes par ce bot sur ce symbole
-void CloseAllTrades()
+// Ferme les positions du bot sur ce symbole ; type = -1 pour toutes,
+// sinon seulement POSITION_TYPE_BUY ou POSITION_TYPE_SELL
+void ClosePositions(long type)
 {
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -355,11 +371,46 @@ void CloseAllTrades()
          continue;
 
       if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
-         PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber)
+         PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber &&
+         (type < 0 || PositionGetInteger(POSITION_TYPE) == type))
          trade.PositionClose(ticket);
    }
+}
 
+void CloseAllTrades()
+{
+   ClosePositions(-1);
    Print("Toutes les positions du bot ont été fermées automatiquement.");
+}
+
+//+------------------------------------------------------------------+
+// Tendance : +1 haussière, -1 baissière, 0 pas de tendance claire.
+// M1 : EMA rapide au-dessus de l'EMA lente, EMA lente qui monte, et
+// clôture au-dessus de l'EMA lente (inverse pour la baisse).
+// Option : clôture de l'unité de temps supérieure du même côté de son EMA.
+int GetTrend(const double &fast[], const double &slow[], const double &close[])
+{
+   int trend = 0;
+
+   if(fast[1] > slow[1] && slow[1] > slow[3] && close[1] > slow[1])
+      trend = 1;
+   else if(fast[1] < slow[1] && slow[1] < slow[3] && close[1] < slow[1])
+      trend = -1;
+
+   if(trend == 0 || !UseHigherTimeframe)
+      return trend;
+
+   double htfEma[], htfClose[];
+   ArraySetAsSeries(htfEma, true);
+   ArraySetAsSeries(htfClose, true);
+
+   if(CopyBuffer(htfHandle, 0, 0, 2, htfEma) < 2 ||
+      CopyClose(_Symbol, TrendTimeframe, 0, 2, htfClose) < 2)
+      return 0;
+
+   if(trend ==  1 && htfClose[1] > htfEma[1]) return  1;
+   if(trend == -1 && htfClose[1] < htfEma[1]) return -1;
+   return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -371,6 +422,32 @@ void OnTick()
    // Les nouvelles entrées : une fois par bougie M1 clôturée
    if(!IsNewBar())
       return;
+
+   // Index 1 = dernière bougie clôturée, index 2 = celle d'avant, etc.
+   double fast[], slow[], rsi[], open[], high[], low[], close[];
+   ArraySetAsSeries(fast, true);
+   ArraySetAsSeries(slow, true);
+   ArraySetAsSeries(rsi, true);
+   ArraySetAsSeries(open, true);
+   ArraySetAsSeries(high, true);
+   ArraySetAsSeries(low, true);
+   ArraySetAsSeries(close, true);
+
+   if(CopyBuffer(fastHandle, 0, 0, 4, fast) < 4 ||
+      CopyBuffer(slowHandle, 0, 0, 4, slow) < 4 ||
+      CopyBuffer(rsiHandle,  0, 0, 4, rsi)  < 4 ||
+      CopyOpen (_Symbol, PERIOD_M1, 0, 4, open)  < 4 ||
+      CopyHigh (_Symbol, PERIOD_M1, 0, 4, high)  < 4 ||
+      CopyLow  (_Symbol, PERIOD_M1, 0, 4, low)   < 4 ||
+      CopyClose(_Symbol, PERIOD_M1, 0, 4, close) < 4)
+      return;   // données pas encore prêtes
+
+   // Sortie si la tendance M1 s'est retournée contre la position
+   if(CloseOnTrendReversal)
+   {
+      if(fast[1] < slow[1]) ClosePositions(POSITION_TYPE_BUY);
+      if(fast[1] > slow[1]) ClosePositions(POSITION_TYPE_SELL);
+   }
 
    if(!IsTradingHour())
       return;
@@ -389,34 +466,36 @@ void OnTick()
       profitToday <= -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)
       return;
 
-   // Index 1 = dernière bougie clôturée, index 2 = celle d'avant
-   double ma[], rsi[], close[];
-   ArraySetAsSeries(ma, true);
-   ArraySetAsSeries(rsi, true);
-   ArraySetAsSeries(close, true);
+   int trend = GetTrend(fast, slow, close);
+   if(trend == 0)
+      return;
 
-   if(CopyBuffer(maHandle,  0, 0, 3, ma)  < 3 ||
-      CopyBuffer(rsiHandle, 0, 0, 3, rsi) < 3 ||
-      CopyClose(_Symbol, PERIOD_M1, 0, 3, close) < 3)
-      return;   // données pas encore prêtes
+   double tolerance = PullbackTolerancePips * PipSize();
 
-   // Retournement RSI : sortie de la zone de survente / surachat
-   bool buySignal  = rsi[2] < RsiOversold   && rsi[1] >= RsiOversold;
-   bool sellSignal = rsi[2] > RsiOverbought && rsi[1] <= RsiOverbought;
+   // Achat : en tendance haussière, le prix revient toucher l'EMA rapide
+   // puis la bougie clôture en hausse au-dessus d'elle (on reprend le train).
+   bool buySignal = trend == 1 &&
+                    MathMin(low[1], low[2]) <= fast[1] + tolerance &&
+                    close[1] > fast[1] &&
+                    close[1] > open[1] &&
+                    rsi[1] > RsiMidLevel;
 
-   // Filtre de tendance avec la moyenne mobile
-   bool trendBuyAllowed  = close[1] > ma[1];
-   bool trendSellAllowed = close[1] < ma[1];
+   // Vente : symétrique en tendance baissière
+   bool sellSignal = trend == -1 &&
+                     MathMax(high[1], high[2]) >= fast[1] - tolerance &&
+                     close[1] < fast[1] &&
+                     close[1] < open[1] &&
+                     rsi[1] < RsiMidLevel;
 
-   if(!(buySignal && trendBuyAllowed) && !(sellSignal && trendSellAllowed))
+   if(!buySignal && !sellSignal)
       return;
 
    if(!CheckSpread())
       return;
 
-   if(buySignal && trendBuyAllowed)
+   if(buySignal)
       OpenBuy();
-   else if(sellSignal && trendSellAllowed)
+   else
       OpenSell();
 }
 //+------------------------------------------------------------------+

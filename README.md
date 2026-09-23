@@ -2,17 +2,27 @@
 
 Expert Advisor MetaTrader 5 de scalping (`EMYO_BOT.mq5`), unité de temps M1.
 
-## Stratégie
+## Stratégie : suivre la tendance sur M1
 
-- **Achat** : le RSI sort de la zone de survente (repasse au-dessus de `RsiOversold`)
-  et la dernière bougie clôture au-dessus de la moyenne mobile `MaPeriod`.
-- **Vente** : le RSI repasse sous `RsiOverbought` et la clôture est sous la moyenne mobile.
-- Une seule position à la fois, analyse une fois par bougie M1 clôturée.
+1. **Tendance** : EMA 20 au-dessus de l'EMA 50, EMA 50 qui monte, et prix au-dessus
+   (inverse pour une tendance baissière). Option : la tendance doit aussi être confirmée
+   sur M15 (prix du même côté de son EMA 50). Sans tendance claire, le bot ne trade pas.
+2. **Entrée à chaque repli** : en tendance haussière, dès que le prix revient toucher
+   l'EMA 20 puis qu'une bougie clôture en hausse au-dessus d'elle (RSI > 50), le bot achète.
+   Symétrique à la vente en tendance baissière.
+3. **Laisser courir** : break-even puis trailing stop pour suivre le mouvement ;
+   la position est fermée si l'EMA 20 repasse de l'autre côté de l'EMA 50.
+
+Une seule position à la fois ; dès qu'elle est fermée, le bot reprend le train au repli suivant.
 
 ## Protections
 
 | Paramètre | Rôle |
 |---|---|
+| `FastEmaPeriod` / `SlowEmaPeriod` | EMA de repli et EMA de direction sur M1 |
+| `UseHigherTimeframe` / `TrendTimeframe` / `TrendEmaPeriod` | Confirmation de la tendance sur une unité de temps supérieure |
+| `CloseOnTrendReversal` | Ferme la position quand la tendance M1 s'inverse |
+| `PullbackTolerancePips` / `RsiMidLevel` | Précision du repli et filtre de momentum |
 | `RiskPercent` | Calcule le lot pour risquer ce % du solde sur le SL (0 = lot fixe `Lots`) |
 | `BreakEvenPips` / `BreakEvenLockPips` | Remonte le SL au prix d'entrée + quelques pips une fois en gain |
 | `TrailingStopPips` / `TrailingStepPips` | Fait suivre le SL derrière le prix (0 = désactivé) |
