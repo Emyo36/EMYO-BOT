@@ -1,23 +1,33 @@
 //+------------------------------------------------------------------+
 //|              EMYO BOT - SCALPING M1 SUIVI DE TENDANCE             |
+//|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.30"
+#property version   "1.40"
 
 #include <Trade\Trade.mqh>
+
+enum ENUM_DISTANCE_MODE
+{
+   DISTANCE_ATR  = 0,   // ATR (s'adapte à chaque marché)
+   DISTANCE_PIPS = 1    // Pips fixes (forex)
+};
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
 input group "Taille des positions"
 input double Lots               = 0.01;  // Lot fixe (si RiskPercent = 0)
 input double RiskPercent        = 0;     // % du solde risqué par trade (0 = lot fixe)
 
-input group "Sorties"
-input double StopLossPips       = 10;
-input double TakeProfitPips     = 30;
-input double BreakEvenPips      = 8;     // Gain qui déclenche le break-even (0 = off)
-input double BreakEvenLockPips  = 1;     // Pips sécurisés au break-even
-input double TrailingStopPips   = 10;    // Distance du trailing stop (0 = off)
-input double TrailingStepPips   = 1;     // Déplacement minimum du trailing
+input group "Distances (en ATR, ou en pips si mode Pips)"
+input ENUM_DISTANCE_MODE DistanceMode = DISTANCE_ATR;
+input int    AtrPeriod          = 14;    // Période de l'ATR M1
+input double StopLoss           = 1.5;   // Stop Loss
+input double TakeProfit         = 4.0;   // Take Profit (0 = pas de TP, le trailing gère la sortie)
+input double BreakEvenTrigger   = 1.0;   // Gain qui déclenche le break-even (0 = off)
+input double BreakEvenLock      = 0.1;   // Gain sécurisé au break-even
+input double TrailingStop       = 1.5;   // Distance du trailing stop (0 = off)
+input double TrailingStep       = 0.2;   // Déplacement minimum du trailing
+input double PullbackTolerance  = 0.2;   // Distance max. à l'EMA rapide pour valider le repli
 
 input group "Tendance"
 input int             FastEmaPeriod     = 20;          // EMA rapide M1 (zone de repli)
@@ -28,13 +38,13 @@ input int             TrendEmaPeriod    = 50;          // EMA de confirmation
 input bool            CloseOnTrendReversal = true;     // Fermer si la tendance M1 s'inverse
 
 input group "Entrée"
-input double PullbackTolerancePips = 1;  // Distance max. à l'EMA rapide pour valider le repli
 input int    RsiPeriod          = 14;    // Période du RSI
 input double RsiMidLevel        = 50;    // RSI > niveau pour acheter, < niveau pour vendre
 
 input group "Filtres"
-input double MaxSpreadPoints    = 60;    // Spread maximum autorisé (points)
-input int    MaxSlippagePoints  = 10;    // Glissement maximum accepté (points)
+input double MaxSpreadPercentOfSL  = 20; // Spread max. en % du Stop Loss (0 = off)
+input double MaxSpreadPoints       = 0;  // Spread max. en points (0 = off)
+input double MaxSlippagePercentOfSL = 10; // Glissement max. accepté en % du Stop Loss
 input int    StartHour          = 0;     // Heure serveur de début (StartHour = EndHour : 24h/24)
 input int    EndHour            = 0;     // Heure serveur de fin (exclue)
 
@@ -50,15 +60,16 @@ int      fastHandle  = INVALID_HANDLE;
 int      slowHandle  = INVALID_HANDLE;
 int      htfHandle   = INVALID_HANDLE;
 int      rsiHandle   = INVALID_HANDLE;
+int      atrHandle   = INVALID_HANDLE;
 datetime lastBarTime = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(StopLossPips <= 0 || TakeProfitPips <= 0 || RsiPeriod <= 0 ||
+   if(StopLoss <= 0 || TakeProfit < 0 || AtrPeriod <= 0 || RsiPeriod <= 0 ||
       FastEmaPeriod <= 0 || SlowEmaPeriod <= FastEmaPeriod || TrendEmaPeriod <= 0 ||
-      StartHour < 0 || StartHour > 23 ||
-      EndHour < 0 || EndHour > 23 || Lots <= 0 || RiskPercent < 0)
+      StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
+      Lots <= 0 || RiskPercent < 0)
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
@@ -68,19 +79,20 @@ int OnInit()
    slowHandle = iMA(_Symbol, PERIOD_M1, SlowEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    htfHandle  = iMA(_Symbol, TrendTimeframe, TrendEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    rsiHandle  = iRSI(_Symbol, PERIOD_M1, RsiPeriod, PRICE_CLOSE);
+   atrHandle  = iATR(_Symbol, PERIOD_M1, AtrPeriod);
 
    if(fastHandle == INVALID_HANDLE || slowHandle == INVALID_HANDLE ||
-      htfHandle  == INVALID_HANDLE || rsiHandle  == INVALID_HANDLE)
+      htfHandle  == INVALID_HANDLE || rsiHandle  == INVALID_HANDLE ||
+      atrHandle  == INVALID_HANDLE)
    {
       Print("Erreur : impossible de créer les indicateurs");
       return(INIT_FAILED);
    }
 
    trade.SetExpertMagicNumber(MagicNumber);
-   trade.SetDeviationInPoints(MaxSlippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   Print("Bot lancé");
+   Print("Bot lancé sur ", _Symbol);
    return(INIT_SUCCEEDED);
 }
 
@@ -99,6 +111,7 @@ void OnDeinit(const int reason)
    if(slowHandle != INVALID_HANDLE) IndicatorRelease(slowHandle);
    if(htfHandle  != INVALID_HANDLE) IndicatorRelease(htfHandle);
    if(rsiHandle  != INVALID_HANDLE) IndicatorRelease(rsiHandle);
+   if(atrHandle  != INVALID_HANDLE) IndicatorRelease(atrHandle);
 
    Print("Bot arrêté");
 }
@@ -112,22 +125,43 @@ double PipSize()
    return _Point;
 }
 
+// Unité de distance en prix : l'ATR de la dernière bougie clôturée,
+// ou un pip. Toutes les distances (SL, TP, trailing...) en sont des multiples.
+// Renvoie 0 si l'ATR n'est pas encore disponible.
+double DistanceUnit()
+{
+   if(DistanceMode == DISTANCE_PIPS)
+      return PipSize();
+
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   if(CopyBuffer(atrHandle, 0, 0, 2, atr) < 2)
+      return 0;
+   return atr[1];
+}
+
 // Distance minimale imposée par le courtier entre le prix et le SL/TP
 double MinStopDistance()
 {
    return SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
 }
 
-bool CheckSpread()
+// Refuse d'entrer si le spread est trop grand par rapport au Stop Loss
+bool CheckSpread(double slDistance)
 {
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double spread = ask - bid;
 
-   double spreadPoints = (ask - bid) / _Point;
-
-   if(spreadPoints > MaxSpreadPoints)
+   if(MaxSpreadPoints > 0 && spread / _Point > MaxSpreadPoints)
    {
-      Print("Spread trop élevé : ", spreadPoints, " points");
+      Print("Spread trop élevé : ", spread / _Point, " points");
+      return false;
+   }
+
+   if(MaxSpreadPercentOfSL > 0 && spread > slDistance * MaxSpreadPercentOfSL / 100.0)
+   {
+      Print("Spread trop élevé : ", DoubleToString(spread / slDistance * 100.0, 1), " % du Stop Loss");
       return false;
    }
 
@@ -210,7 +244,7 @@ bool HasOpenPosition()
 }
 
 // Lot fixe, ou lot calculé pour ne risquer que RiskPercent du solde
-double CalculateLots()
+double CalculateLots(double slDistance)
 {
    double lots = Lots;
 
@@ -222,7 +256,7 @@ double CalculateLots()
          return 0;
 
       double riskMoney  = AccountInfoDouble(ACCOUNT_BALANCE) * RiskPercent / 100.0;
-      double lossPerLot = StopLossPips * PipSize() / tickSize * tickValue;
+      double lossPerLot = slDistance / tickSize * tickValue;
       lots = riskMoney / lossPerLot;
    }
 
@@ -246,60 +280,70 @@ double CalculateLots()
 }
 
 // Vrai si les distances SL/TP respectent le minimum du courtier
-bool StopsAllowed()
+bool StopsAllowed(double slDistance, double tpDistance)
 {
    double minDist = MinStopDistance();
-   if(StopLossPips * PipSize() < minDist || TakeProfitPips * PipSize() < minDist)
+   if(slDistance < minDist || (tpDistance > 0 && tpDistance < minDist))
    {
-      Print("SL/TP trop proches : minimum du courtier = ", minDist / PipSize(), " pips");
+      Print("SL/TP trop proches : minimum du courtier = ", minDist, " en prix");
       return false;
    }
    return true;
 }
 
 //+------------------------------------------------------------------+
-void OpenBuy()
+// Ouvre une position dans le sens demandé (POSITION_TYPE_BUY / SELL)
+void OpenPosition(long type, double unit)
 {
-   double lots = CalculateLots();
-   if(lots <= 0 || !StopsAllowed())
+   double slDistance = StopLoss   * unit;
+   double tpDistance = TakeProfit * unit;
+
+   if(!CheckSpread(slDistance) || !StopsAllowed(slDistance, tpDistance))
       return;
 
-   double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);   // on achète au Ask
-   double sl    = NormalizeDouble(price - StopLossPips   * PipSize(), _Digits);
-   double tp    = NormalizeDouble(price + TakeProfitPips * PipSize(), _Digits);
-
-   if(trade.Buy(lots, _Symbol, price, sl, tp))
-      Print("BUY exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
-   else
-      Print("BUY refusé : ", trade.ResultRetcodeDescription());
-}
-
-//+------------------------------------------------------------------+
-void OpenSell()
-{
-   double lots = CalculateLots();
-   if(lots <= 0 || !StopsAllowed())
+   double lots = CalculateLots(slDistance);
+   if(lots <= 0)
       return;
 
-   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);   // on vend au Bid
-   double sl    = NormalizeDouble(price + StopLossPips   * PipSize(), _Digits);
-   double tp    = NormalizeDouble(price - TakeProfitPips * PipSize(), _Digits);
+   trade.SetDeviationInPoints((ulong)MathMax(1, slDistance * MaxSlippagePercentOfSL / 100.0 / _Point));
 
-   if(trade.Sell(lots, _Symbol, price, sl, tp))
-      Print("SELL exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
+   if(type == POSITION_TYPE_BUY)
+   {
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);   // on achète au Ask
+      double sl    = NormalizeDouble(price - slDistance, _Digits);
+      double tp    = (tpDistance > 0) ? NormalizeDouble(price + tpDistance, _Digits) : 0;
+
+      if(trade.Buy(lots, _Symbol, price, sl, tp))
+         Print("BUY exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
+      else
+         Print("BUY refusé : ", trade.ResultRetcodeDescription());
+   }
    else
-      Print("SELL refusé : ", trade.ResultRetcodeDescription());
+   {
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);   // on vend au Bid
+      double sl    = NormalizeDouble(price + slDistance, _Digits);
+      double tp    = (tpDistance > 0) ? NormalizeDouble(price - tpDistance, _Digits) : 0;
+
+      if(trade.Sell(lots, _Symbol, price, sl, tp))
+         Print("SELL exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
+      else
+         Print("SELL refusé : ", trade.ResultRetcodeDescription());
+   }
 }
 
 //+------------------------------------------------------------------+
 // Break-even puis trailing stop, appelé à chaque tick
 void ManagePositions()
 {
-   if(BreakEvenPips <= 0 && TrailingStopPips <= 0)
+   if(BreakEvenTrigger <= 0 && TrailingStop <= 0)
       return;
 
-   double pip     = PipSize();
+   double unit = DistanceUnit();
+   if(unit <= 0)
+      return;
+
    double minDist = MinStopDistance();
+   double step    = TrailingStep * unit;
    double bid     = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask     = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
@@ -323,36 +367,35 @@ void ManagePositions()
       {
          double profit = bid - openPrice;
 
-         if(BreakEvenPips > 0 && profit >= BreakEvenPips * pip)
-            newSL = MathMax(newSL, openPrice + BreakEvenLockPips * pip);
+         if(BreakEvenTrigger > 0 && profit >= BreakEvenTrigger * unit)
+            newSL = MathMax(newSL, openPrice + BreakEvenLock * unit);
 
-         if(TrailingStopPips > 0 && profit >= TrailingStopPips * pip)
-            newSL = MathMax(newSL, bid - TrailingStopPips * pip);
+         if(TrailingStop > 0 && profit >= TrailingStop * unit)
+            newSL = MathMax(newSL, bid - TrailingStop * unit);
 
          newSL = NormalizeDouble(newSL, _Digits);
 
          // On ne bouge le SL que vers le haut, d'au moins un pas, et à distance autorisée
-         if(newSL > currentSL + TrailingStepPips * pip * 0.999 &&
-            bid - newSL >= minDist)
+         if(newSL > currentSL + step * 0.999 && bid - newSL >= minDist)
             trade.PositionModify(ticket, newSL, currentTP);
       }
       else if(type == POSITION_TYPE_SELL)
       {
          double profit = openPrice - ask;
 
-         if(BreakEvenPips > 0 && profit >= BreakEvenPips * pip)
-            newSL = (newSL == 0) ? openPrice - BreakEvenLockPips * pip
-                                 : MathMin(newSL, openPrice - BreakEvenLockPips * pip);
+         if(BreakEvenTrigger > 0 && profit >= BreakEvenTrigger * unit)
+            newSL = (newSL == 0) ? openPrice - BreakEvenLock * unit
+                                 : MathMin(newSL, openPrice - BreakEvenLock * unit);
 
-         if(TrailingStopPips > 0 && profit >= TrailingStopPips * pip)
-            newSL = (newSL == 0) ? ask + TrailingStopPips * pip
-                                 : MathMin(newSL, ask + TrailingStopPips * pip);
+         if(TrailingStop > 0 && profit >= TrailingStop * unit)
+            newSL = (newSL == 0) ? ask + TrailingStop * unit
+                                 : MathMin(newSL, ask + TrailingStop * unit);
 
          newSL = NormalizeDouble(newSL, _Digits);
 
          // On ne bouge le SL que vers le bas, d'au moins un pas, et à distance autorisée
          if(newSL > 0 &&
-            (currentSL == 0 || newSL < currentSL - TrailingStepPips * pip * 0.999) &&
+            (currentSL == 0 || newSL < currentSL - step * 0.999) &&
             newSL - ask >= minDist)
             trade.PositionModify(ticket, newSL, currentTP);
       }
@@ -470,7 +513,11 @@ void OnTick()
    if(trend == 0)
       return;
 
-   double tolerance = PullbackTolerancePips * PipSize();
+   double unit = DistanceUnit();
+   if(unit <= 0)
+      return;
+
+   double tolerance = PullbackTolerance * unit;
 
    // Achat : en tendance haussière, le prix revient toucher l'EMA rapide
    // puis la bougie clôture en hausse au-dessus d'elle (on reprend le train).
@@ -487,15 +534,9 @@ void OnTick()
                      close[1] < open[1] &&
                      rsi[1] < RsiMidLevel;
 
-   if(!buySignal && !sellSignal)
-      return;
-
-   if(!CheckSpread())
-      return;
-
    if(buySignal)
-      OpenBuy();
-   else
-      OpenSell();
+      OpenPosition(POSITION_TYPE_BUY, unit);
+   else if(sellSignal)
+      OpenPosition(POSITION_TYPE_SELL, unit);
 }
 //+------------------------------------------------------------------+
