@@ -11,11 +11,27 @@ pensé pour l'**or (XAUUSD)**, le **Bitcoin (BTCUSD)** et le **NASDAQ (NAS100 / 
 2. **Entrée à chaque repli** : en tendance haussière, dès que le prix revient toucher
    l'EMA 20 puis qu'une bougie clôture en hausse au-dessus d'elle (RSI > 50), le bot achète.
    Symétrique à la vente en tendance baissière.
-3. **Laisser courir** : break-even puis trailing stop pour suivre le mouvement ;
-   la position est fermée si l'EMA 20 repasse de l'autre côté de l'EMA 50.
+3. **Petit gain rapide** : le Take Profit est placé à 1 ATR et le lot est calculé pour
+   que ce TP rapporte `TargetProfitMoney` (3 € par défaut). Le break-even protège
+   le trade dès qu'il est à mi-chemin ; la position est fermée si l'EMA 20 repasse
+   de l'autre côté de l'EMA 50.
 
 Une seule position à la fois par symbole ; dès qu'elle est fermée, le bot reprend
-le train au repli suivant.
+le train au repli suivant. Objectif : beaucoup de petits gains répétés.
+
+## Gain fixe en euros
+
+Avec `TargetProfitMoney = 3`, chaque trade vise 3 € (dans la devise du compte),
+quel que soit le marché : le bot adapte le lot à la distance du TP. Le journal
+(onglet Experts) affiche à chaque trade le gain visé et la perte maximale.
+
+Attention au rapport gain / perte : avec les réglages par défaut (TP 1 ATR,
+SL 1,2 ATR), un gain de 3 € s'accompagne d'une perte maximale d'environ 3,60 €.
+Il faut donc gagner plus de 55 % des trades pour être rentable, commissions
+comprises. Une perte efface plus d'un gain : c'est le point à vérifier en backtest.
+
+Si le lot minimum du courtier donne déjà un gain supérieur à l'objectif, le bot ne
+prend pas le trade (plutôt que de risquer plus que prévu) et l'indique dans le journal.
 
 ## Distances en ATR
 
@@ -40,15 +56,15 @@ visible dans l'Observateur de marché).
 | NASDAQ | 16 → 23 | Ouverture de Wall Street (16h30) jusqu'à la clôture |
 | Bitcoin | 0 → 0 (24h/24) | Marché ouvert en continu ; réduire à 10 → 23 si trop de faux signaux la nuit |
 
-Commencer avec `RiskPercent = 0.5` (0,5 % du solde risqué par trade) plutôt qu'un lot fixe :
-le lot est alors calculé correctement pour chaque marché, dont les valeurs par lot
-sont très différentes.
+Le lot est calculé automatiquement par `TargetProfitMoney` ; `MaxLots` sert de garde-fou.
 
 ## Paramètres
 
 | Paramètre | Rôle |
 |---|---|
-| `RiskPercent` / `Lots` | Lot calculé pour risquer ce % du solde sur le SL, ou lot fixe si 0 |
+| `TargetProfitMoney` | Gain visé par trade en devise du compte ; le lot est calculé pour l'atteindre au TP |
+| `RiskPercent` / `Lots` | Si `TargetProfitMoney = 0` : lot pour risquer ce % du solde, sinon lot fixe |
+| `MaxLots` | Lot maximum, quel que soit le calcul |
 | `DistanceMode` / `AtrPeriod` | Distances en ATR (défaut) ou en pips |
 | `StopLoss` / `TakeProfit` | SL et TP en ATR ; `TakeProfit = 0` laisse le trailing gérer la sortie |
 | `BreakEvenTrigger` / `BreakEvenLock` | Remonte le SL au prix d'entrée + une marge une fois en gain |
@@ -63,6 +79,7 @@ sont très différentes.
 | `StartHour` / `EndHour` | Plage horaire de trading, heure du serveur (égales = 24h/24) |
 | `MaxTradesPerDay` | Nombre maximum de trades par jour et par symbole |
 | `MaxDailyLossPercent` | Arrête d'ouvrir des trades pour la journée après cette perte |
+| `DailyProfitTargetMoney` | Arrête d'ouvrir des trades pour la journée une fois ce gain atteint (0 = off) |
 | `MagicNumber` | Identifie les positions du bot (les autres ne sont jamais touchées) |
 | `AutoCloseOnStop` | Ferme les positions du bot quand on le retire du graphique |
 

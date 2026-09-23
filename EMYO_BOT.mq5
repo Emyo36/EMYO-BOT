@@ -3,7 +3,7 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.40"
+#property version   "1.50"
 
 #include <Trade\Trade.mqh>
 
@@ -15,17 +15,19 @@ enum ENUM_DISTANCE_MODE
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
 input group "Taille des positions"
-input double Lots               = 0.01;  // Lot fixe (si RiskPercent = 0)
-input double RiskPercent        = 0;     // % du solde risqué par trade (0 = lot fixe)
+input double TargetProfitMoney  = 3;     // Gain visé par trade, en devise du compte (0 = off)
+input double RiskPercent        = 0;     // % du solde risqué par trade (si TargetProfitMoney = 0)
+input double Lots               = 0.01;  // Lot fixe (si TargetProfitMoney = 0 et RiskPercent = 0)
+input double MaxLots            = 1.0;   // Lot maximum autorisé, quel que soit le calcul
 
 input group "Distances (en ATR, ou en pips si mode Pips)"
 input ENUM_DISTANCE_MODE DistanceMode = DISTANCE_ATR;
 input int    AtrPeriod          = 14;    // Période de l'ATR M1
-input double StopLoss           = 1.5;   // Stop Loss
-input double TakeProfit         = 4.0;   // Take Profit (0 = pas de TP, le trailing gère la sortie)
-input double BreakEvenTrigger   = 1.0;   // Gain qui déclenche le break-even (0 = off)
+input double StopLoss           = 1.2;   // Stop Loss
+input double TakeProfit         = 1.0;   // Take Profit (0 = pas de TP, le trailing gère la sortie)
+input double BreakEvenTrigger   = 0.6;   // Gain qui déclenche le break-even (0 = off)
 input double BreakEvenLock      = 0.1;   // Gain sécurisé au break-even
-input double TrailingStop       = 1.5;   // Distance du trailing stop (0 = off)
+input double TrailingStop       = 0;     // Distance du trailing stop (0 = off)
 input double TrailingStep       = 0.2;   // Déplacement minimum du trailing
 input double PullbackTolerance  = 0.2;   // Distance max. à l'EMA rapide pour valider le repli
 
@@ -49,8 +51,9 @@ input int    StartHour          = 0;     // Heure serveur de début (StartHour =
 input int    EndHour            = 0;     // Heure serveur de fin (exclue)
 
 input group "Sécurité"
-input int    MaxTradesPerDay    = 10;    // 0 = illimité
+input int    MaxTradesPerDay    = 30;    // 0 = illimité
 input double MaxDailyLossPercent = 3;    // Arrêt du jour après cette perte en % (0 = off)
+input double DailyProfitTargetMoney = 0; // Arrêt du jour une fois ce gain atteint (0 = off)
 input ulong  MagicNumber        = 360036;
 input bool   AutoCloseOnStop    = true;  // Fermer les positions quand le bot est retiré
 
@@ -69,7 +72,8 @@ int OnInit()
    if(StopLoss <= 0 || TakeProfit < 0 || AtrPeriod <= 0 || RsiPeriod <= 0 ||
       FastEmaPeriod <= 0 || SlowEmaPeriod <= FastEmaPeriod || TrendEmaPeriod <= 0 ||
       StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
-      Lots <= 0 || RiskPercent < 0)
+      Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxLots <= 0 ||
+      (TargetProfitMoney > 0 && TakeProfit <= 0))
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
@@ -243,22 +247,40 @@ bool HasOpenPosition()
    return false;
 }
 
-// Lot fixe, ou lot calculé pour ne risquer que RiskPercent du solde
-double CalculateLots(double slDistance)
+// Valeur en devise du compte d'un mouvement de prix de 'distance' pour 1 lot
+double MoneyPerLot(double distance)
+{
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tickValue <= 0 || tickSize <= 0)
+      return 0;
+   return distance / tickSize * tickValue;
+}
+
+// Taille du lot, par ordre de priorité :
+//  1. TargetProfitMoney : le TP rapporte ce montant
+//  2. RiskPercent       : le SL coûte ce % du solde
+//  3. Lots              : lot fixe
+double CalculateLots(double slDistance, double tpDistance)
 {
    double lots = Lots;
 
-   if(RiskPercent > 0)
+   if(TargetProfitMoney > 0)
    {
-      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-      double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-      if(tickValue <= 0 || tickSize <= 0)
+      double gainPerLot = MoneyPerLot(tpDistance);
+      if(gainPerLot <= 0)
          return 0;
-
-      double riskMoney  = AccountInfoDouble(ACCOUNT_BALANCE) * RiskPercent / 100.0;
-      double lossPerLot = slDistance / tickSize * tickValue;
-      lots = riskMoney / lossPerLot;
+      lots = TargetProfitMoney / gainPerLot;
    }
+   else if(RiskPercent > 0)
+   {
+      double lossPerLot = MoneyPerLot(slDistance);
+      if(lossPerLot <= 0)
+         return 0;
+      lots = AccountInfoDouble(ACCOUNT_BALANCE) * RiskPercent / 100.0 / lossPerLot;
+   }
+
+   lots = MathMin(lots, MaxLots);
 
    double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
@@ -272,7 +294,10 @@ double CalculateLots(double slDistance)
 
    if(lots < minLot)
    {
-      Print("Lot calculé trop petit (", lots, "), minimum du courtier : ", minLot);
+      // On n'augmente pas le lot tout seul : le gain et la perte dépasseraient l'objectif
+      Print("Lot calculé trop petit (", lots, "), minimum du courtier : ", minLot,
+            " | gain au TP avec le lot minimum : ",
+            DoubleToString(MoneyPerLot(tpDistance) * minLot, 2), " ", AccountInfoString(ACCOUNT_CURRENCY));
       return 0;
    }
 
@@ -301,9 +326,13 @@ void OpenPosition(long type, double unit)
    if(!CheckSpread(slDistance) || !StopsAllowed(slDistance, tpDistance))
       return;
 
-   double lots = CalculateLots(slDistance);
+   double lots = CalculateLots(slDistance, tpDistance);
    if(lots <= 0)
       return;
+
+   string currency   = AccountInfoString(ACCOUNT_CURRENCY);
+   string moneyInfo  = " | Gain visé=" + DoubleToString(MoneyPerLot(tpDistance) * lots, 2) + " " + currency +
+                       " Perte max=" + DoubleToString(MoneyPerLot(slDistance) * lots, 2) + " " + currency;
 
    trade.SetDeviationInPoints((ulong)MathMax(1, slDistance * MaxSlippagePercentOfSL / 100.0 / _Point));
 
@@ -314,7 +343,7 @@ void OpenPosition(long type, double unit)
       double tp    = (tpDistance > 0) ? NormalizeDouble(price + tpDistance, _Digits) : 0;
 
       if(trade.Buy(lots, _Symbol, price, sl, tp))
-         Print("BUY exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
+         Print("BUY exécuté | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
       else
          Print("BUY refusé : ", trade.ResultRetcodeDescription());
    }
@@ -325,7 +354,7 @@ void OpenPosition(long type, double unit)
       double tp    = (tpDistance > 0) ? NormalizeDouble(price - tpDistance, _Digits) : 0;
 
       if(trade.Sell(lots, _Symbol, price, sl, tp))
-         Print("SELL exécuté | Lots=", lots, " SL=", sl, " TP=", tp);
+         Print("SELL exécuté | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
       else
          Print("SELL refusé : ", trade.ResultRetcodeDescription());
    }
@@ -507,6 +536,9 @@ void OnTick()
 
    if(MaxDailyLossPercent > 0 &&
       profitToday <= -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)
+      return;
+
+   if(DailyProfitTargetMoney > 0 && profitToday >= DailyProfitTargetMoney)
       return;
 
    int trend = GetTrend(fast, slow, close);
