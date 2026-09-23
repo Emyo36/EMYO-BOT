@@ -3,7 +3,7 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.60"
+#property version   "1.70"
 
 #include <Trade\Trade.mqh>
 
@@ -12,6 +12,13 @@ enum ENUM_ENTRY_MODE
    ENTRY_MOMENTUM = 0,  // Momentum (cassure avec une bougie forte)
    ENTRY_PULLBACK = 1,  // Repli sur l'EMA rapide
    ENTRY_BOTH     = 2   // Les deux
+};
+
+enum ENUM_SESSION_MODE
+{
+   SESSION_NEW_YORK = 0,  // Session américaine (heure de New York)
+   SESSION_SERVER   = 1,  // Plage StartHour / EndHour (heure serveur)
+   SESSION_ALWAYS   = 2   // 24h/24
 };
 
 enum ENUM_DISTANCE_MODE
@@ -64,8 +71,18 @@ input group "Filtres"
 input double MaxSpreadPercentOfSL  = 20; // Spread max. en % du Stop Loss (0 = off)
 input double MaxSpreadPoints       = 0;  // Spread max. en points (0 = off)
 input double MaxSlippagePercentOfSL = 10; // Glissement max. accepté en % du Stop Loss
-input int    StartHour          = 0;     // Heure serveur de début (StartHour = EndHour : 24h/24)
-input int    EndHour            = 0;     // Heure serveur de fin (exclue)
+
+input group "Session de trading"
+input ENUM_SESSION_MODE SessionMode = SESSION_NEW_YORK;
+input int    NyStartHour        = 9;     // Début, heure de New York
+input int    NyStartMinute      = 30;
+input int    NyEndHour          = 16;    // Fin, heure de New York
+input int    NyEndMinute        = 0;
+input bool   WeekdaysOnly       = true;  // Lundi à vendredi uniquement (heure de New York)
+input bool   CloseOutsideSession = true; // Fermer les positions à la fin de la session
+input int    ServerGmtOffset    = 99;    // Décalage GMT du serveur en heures (99 = auto)
+input int    StartHour          = 0;     // Mode serveur : heure de début
+input int    EndHour            = 0;     // Mode serveur : heure de fin (exclue)
 
 input group "Sécurité"
 input int    MaxTradesPerDay    = 60;    // Positions ouvertes par jour au maximum (0 = illimité)
@@ -89,6 +106,8 @@ int OnInit()
    if(StopLoss <= 0 || TakeProfit < 0 || AtrPeriod <= 0 || RsiPeriod <= 0 ||
       FastEmaPeriod <= 0 || SlowEmaPeriod <= FastEmaPeriod || TrendEmaPeriod <= 0 ||
       StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
+      NyStartHour < 0 || NyStartHour > 23 || NyEndHour < 0 || NyEndHour > 23 ||
+      NyStartMinute < 0 || NyStartMinute > 59 || NyEndMinute < 0 || NyEndMinute > 59 ||
       Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxLots <= 0 ||
       (TargetProfitMoney > 0 && TakeProfit <= 0) ||
       TradesPerSignal < 1 || MaxOpenPositions < 1 || TakeProfitStep < 0 ||
@@ -116,7 +135,9 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   Print("Bot lancé sur ", _Symbol);
+   Print("Bot lancé sur ", _Symbol, " | heure de New York : ",
+         TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
+         " | session ", IsTradingHour() ? "ouverte" : "fermée");
    return(INIT_SUCCEEDED);
 }
 
@@ -192,13 +213,84 @@ bool CheckSpread(double slDistance)
    return true;
 }
 
-// Vrai si l'heure serveur est dans la plage de trading
+// Date du n-ième dimanche d'un mois (à minuit)
+datetime NthSunday(int year, int month, int n)
+{
+   MqlDateTime dt;
+   ZeroMemory(dt);
+   dt.year = year;
+   dt.mon  = month;
+   dt.day  = 1;
+   datetime first = StructToTime(dt);
+   TimeToStruct(first, dt);
+
+   int firstSunday = 1 + (7 - dt.day_of_week) % 7;
+   return first + (firstSunday - 1 + 7 * (n - 1)) * 86400;
+}
+
+// Heure d'été américaine : du 2e dimanche de mars 2h (7h GMT)
+// au 1er dimanche de novembre 2h (6h GMT)
+bool IsUsDst(datetime gmt)
+{
+   MqlDateTime dt;
+   TimeToStruct(gmt, dt);
+
+   datetime start = NthSunday(dt.year, 3, 2)  + 7 * 3600;
+   datetime end   = NthSunday(dt.year, 11, 1) + 6 * 3600;
+   return gmt >= start && gmt < end;
+}
+
+// Décalage GMT du serveur, en secondes
+int ServerOffsetSeconds()
+{
+   if(ServerGmtOffset != 99)
+      return ServerGmtOffset * 3600;
+
+   // En backtest, TimeGMT() n'est pas fiable : on suppose le réglage le plus
+   // courant des courtiers MT5 (GMT+2 l'hiver, GMT+3 pendant l'heure d'été US).
+   if(MQLInfoInteger(MQL_TESTER))
+      return (IsUsDst(TimeCurrent() - 2 * 3600) ? 3 : 2) * 3600;
+
+   // En réel : écart entre l'heure du serveur et l'heure GMT, arrondi à 30 min
+   double diff = (double)(TimeTradeServer() - TimeGMT());
+   return (int)(MathRound(diff / 1800.0) * 1800);
+}
+
+// Heure actuelle à New York
+datetime NewYorkTime()
+{
+   datetime gmt = TimeCurrent() - ServerOffsetSeconds();
+   return gmt + (IsUsDst(gmt) ? -4 : -5) * 3600;
+}
+
+// Vrai si l'on est dans la session de trading choisie
 bool IsTradingHour()
 {
-   if(StartHour == EndHour)
+   if(SessionMode == SESSION_ALWAYS)
       return true;
 
    MqlDateTime now;
+
+   if(SessionMode == SESSION_NEW_YORK)
+   {
+      TimeToStruct(NewYorkTime(), now);
+
+      if(WeekdaysOnly && (now.day_of_week == 0 || now.day_of_week == 6))
+         return false;
+
+      int minutes = now.hour * 60 + now.min;
+      int start   = NyStartHour * 60 + NyStartMinute;
+      int end     = NyEndHour   * 60 + NyEndMinute;
+
+      if(start < end)
+         return minutes >= start && minutes < end;
+      return minutes >= start || minutes < end;   // plage qui passe minuit
+   }
+
+   // Mode serveur
+   if(StartHour == EndHour)
+      return true;
+
    TimeToStruct(TimeCurrent(), now);
 
    if(StartHour < EndHour)
@@ -531,6 +623,17 @@ int GetTrend(const double &fast[], const double &slow[], const double &close[])
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   // Fin de session : on ne garde aucune position en dehors
+   if(CloseOutsideSession && !IsTradingHour())
+   {
+      int direction = 0;
+      if(CountOpenPositions(direction) > 0)
+      {
+         ClosePositions(-1);
+         Print("Fin de session : positions fermées.");
+      }
+   }
+
    // La gestion des positions ouvertes se fait à chaque tick
    ManagePositions();
 

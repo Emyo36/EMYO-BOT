@@ -47,20 +47,32 @@ marché et à sa volatilité du moment. Exemple : si l'ATR de l'or vaut 0,80 $,
 
 Le mode `DistanceMode = Pips` reste disponible pour le forex.
 
+## Session américaine
+
+Par défaut (`SessionMode = Session américaine`), le bot ne trade que pendant la
+session de New York, **9h30 → 16h00 heure de New York**, du lundi au vendredi,
+et ferme ses positions à la fin de la session (`CloseOutsideSession`).
+
+Les heures sont en heure de New York : le bot convertit tout seul depuis l'heure du
+serveur du courtier, en tenant compte de l'heure d'été américaine (qui ne change pas
+aux mêmes dates qu'en Europe). En heure de Paris, la session correspond en général à
+15h30 → 22h00, mais à 14h30 → 21h00 quelques semaines en mars et fin octobre.
+
+- En réel, le décalage du serveur est détecté automatiquement.
+- En backtest, le bot suppose un serveur en GMT+2 l'hiver / GMT+3 l'été (réglage le
+  plus courant). Si votre courtier est différent, indiquez son décalage dans
+  `ServerGmtOffset`.
+- Au lancement, le journal affiche l'heure de New York calculée et si la session est
+  ouverte : vérifiez-la une fois.
+
+Pour l'or, dont l'activité américaine démarre plus tôt, on peut mettre
+`NyStartHour = 8`, `NyStartMinute = 0`.
+
 ## Réglages conseillés
 
-Un bot par graphique **M1** : un sur XAUUSD, un sur BTCUSD, un sur NAS100.
-Les réglages par défaut conviennent aux trois ; seule la plage horaire change.
-Les heures sont celles du **serveur du courtier** (souvent GMT+2 en hiver, GMT+3 en été,
-visible dans l'Observateur de marché).
-
-| Marché | `StartHour` → `EndHour` (serveur GMT+3) | Pourquoi |
-|---|---|---|
-| Or | 10 → 22 | Sessions de Londres et New York, spread faible |
-| NASDAQ | 16 → 23 | Ouverture de Wall Street (16h30) jusqu'à la clôture |
-| Bitcoin | 0 → 0 (24h/24) | Marché ouvert en continu ; réduire à 10 → 23 si trop de faux signaux la nuit |
-
-Le lot est calculé automatiquement par `TargetProfitMoney` ; `MaxLots` sert de garde-fou.
+Un bot par graphique **M1** : un sur XAUUSD, un sur BTCUSD, un sur NAS100, avec les
+réglages par défaut. Le lot est calculé automatiquement par `TargetProfitMoney` ;
+`MaxLots` sert de garde-fou.
 
 ## Paramètres
 
@@ -86,7 +98,12 @@ Le lot est calculé automatiquement par `TargetProfitMoney` ; `MaxLots` sert de 
 | `RsiPeriod` / `RsiMidLevel` | Filtre RSI des entrées sur repli (au-dessus / en dessous de 50) |
 | `MaxSpreadPercentOfSL` / `MaxSpreadPoints` | Refuse d'entrer si le spread est trop grand |
 | `MaxSlippagePercentOfSL` | Glissement maximum accepté à l'exécution |
-| `StartHour` / `EndHour` | Plage horaire de trading, heure du serveur (égales = 24h/24) |
+| `SessionMode` | Session américaine (défaut), plage en heure serveur, ou 24h/24 |
+| `NyStartHour` / `NyStartMinute` / `NyEndHour` / `NyEndMinute` | Horaires de la session, heure de New York |
+| `WeekdaysOnly` | Pas de trading le week-end (utile pour le Bitcoin) |
+| `CloseOutsideSession` | Ferme les positions à la fin de la session |
+| `ServerGmtOffset` | Décalage GMT du serveur (99 = automatique) |
+| `StartHour` / `EndHour` | Mode serveur : plage horaire en heure du serveur |
 | `MaxTradesPerDay` | Nombre maximum de positions ouvertes par jour et par symbole (60) |
 | `MaxDailyLossPercent` | Arrête d'ouvrir des trades pour la journée après cette perte |
 | `DailyProfitTargetMoney` | Arrête d'ouvrir des trades pour la journée une fois ce gain atteint (0 = off) |
