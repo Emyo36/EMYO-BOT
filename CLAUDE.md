@@ -41,8 +41,9 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 ## État actuel
 
 - Version : **1.90**, branche `claude/bonjour-sbyppm`.
-- **Jamais compilé ni testé** : aucun compilateur MQL5 dans l'environnement cloud.
-  La première étape reste la compilation (F7 dans MetaEditor) par l'utilisateur.
+- **Compilé sans erreur** par l'utilisateur dans MetaEditor (v1.90). Pas encore testé.
+  Aucun compilateur MQL5 dans l'environnement cloud : toute modification doit être
+  relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
 ## Points de vigilance connus
@@ -55,7 +56,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 
 ## Prochaines étapes
 
-1. Compilation par l'utilisateur ; corriger les erreurs qu'il envoie (captures d'écran).
+1. ~~Compilation~~ : faite, 0 erreur.
 2. Backtest M1 « ticks réels » sur chaque marché, 1 à 2 mois ; puis sur une autre période.
 3. Démo 1 à 3 mois, puis petit compte réel seulement si tout est positif.
 4. Idée en attente : l'utilisateur veut envoyer une stratégie vue en vidéo
