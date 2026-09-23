@@ -3,9 +3,16 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.50"
+#property version   "1.60"
 
 #include <Trade\Trade.mqh>
+
+enum ENUM_ENTRY_MODE
+{
+   ENTRY_MOMENTUM = 0,  // Momentum (cassure avec une bougie forte)
+   ENTRY_PULLBACK = 1,  // Repli sur l'EMA rapide
+   ENTRY_BOTH     = 2   // Les deux
+};
 
 enum ENUM_DISTANCE_MODE
 {
@@ -18,7 +25,12 @@ input group "Taille des positions"
 input double TargetProfitMoney  = 3;     // Gain visé par trade, en devise du compte (0 = off)
 input double RiskPercent        = 0;     // % du solde risqué par trade (si TargetProfitMoney = 0)
 input double Lots               = 0.01;  // Lot fixe (si TargetProfitMoney = 0 et RiskPercent = 0)
-input double MaxLots            = 1.0;   // Lot maximum autorisé, quel que soit le calcul
+input double MaxLots            = 1.0;   // Lot maximum autorisé par position, quel que soit le calcul
+
+input group "Positions simultanées"
+input int    TradesPerSignal    = 3;     // Positions ouvertes ensemble à chaque signal
+input int    MaxOpenPositions   = 3;     // Positions ouvertes en même temps au maximum (ce symbole)
+input double TakeProfitStep     = 0.5;   // Écart entre les TP des positions (en ATR) : 1 / 1.5 / 2...
 
 input group "Distances (en ATR, ou en pips si mode Pips)"
 input ENUM_DISTANCE_MODE DistanceMode = DISTANCE_ATR;
@@ -40,8 +52,13 @@ input int             TrendEmaPeriod    = 50;          // EMA de confirmation
 input bool            CloseOnTrendReversal = true;     // Fermer si la tendance M1 s'inverse
 
 input group "Entrée"
+input ENUM_ENTRY_MODE EntryMode = ENTRY_MOMENTUM;
+input int    MomentumLookback   = 5;     // La bougie doit casser le plus haut / bas de ces N bougies
+input double MomentumBody       = 0.8;   // Corps minimum de la bougie de momentum (en ATR)
+input double MomentumCloseRatio = 0.7;   // Clôture dans les 30 % hauts (achat) / bas (vente) de la bougie
 input int    RsiPeriod          = 14;    // Période du RSI
-input double RsiMidLevel        = 50;    // RSI > niveau pour acheter, < niveau pour vendre
+input double RsiMidLevel        = 50;    // Repli : RSI > niveau pour acheter, < niveau pour vendre
+input double RsiMomentumLevel   = 55;    // Momentum : RSI > niveau (achat) ou < 100 - niveau (vente)
 
 input group "Filtres"
 input double MaxSpreadPercentOfSL  = 20; // Spread max. en % du Stop Loss (0 = off)
@@ -51,7 +68,7 @@ input int    StartHour          = 0;     // Heure serveur de début (StartHour =
 input int    EndHour            = 0;     // Heure serveur de fin (exclue)
 
 input group "Sécurité"
-input int    MaxTradesPerDay    = 30;    // 0 = illimité
+input int    MaxTradesPerDay    = 60;    // Positions ouvertes par jour au maximum (0 = illimité)
 input double MaxDailyLossPercent = 3;    // Arrêt du jour après cette perte en % (0 = off)
 input double DailyProfitTargetMoney = 0; // Arrêt du jour une fois ce gain atteint (0 = off)
 input ulong  MagicNumber        = 360036;
@@ -73,7 +90,10 @@ int OnInit()
       FastEmaPeriod <= 0 || SlowEmaPeriod <= FastEmaPeriod || TrendEmaPeriod <= 0 ||
       StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
       Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxLots <= 0 ||
-      (TargetProfitMoney > 0 && TakeProfit <= 0))
+      (TargetProfitMoney > 0 && TakeProfit <= 0) ||
+      TradesPerSignal < 1 || MaxOpenPositions < 1 || TakeProfitStep < 0 ||
+      MomentumLookback < 1 || MomentumBody < 0 ||
+      MomentumCloseRatio < 0 || MomentumCloseRatio > 1)
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
@@ -231,9 +251,13 @@ void GetTodayStats(int &tradesToday, double &profitToday)
    }
 }
 
-// Vrai si le bot a déjà une position ouverte sur ce symbole
-bool HasOpenPosition()
+// Nombre de positions du bot sur ce symbole ; 'direction' reçoit
+// +1 (achats), -1 (ventes) ou 0 (aucune position)
+int CountOpenPositions(int &direction)
 {
+   int count = 0;
+   direction = 0;
+
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       ulong ticket = PositionGetTicket(i);
@@ -242,9 +266,12 @@ bool HasOpenPosition()
 
       if(PositionGetString(POSITION_SYMBOL) == _Symbol &&
          PositionGetInteger(POSITION_MAGIC) == (long)MagicNumber)
-         return true;
+      {
+         count++;
+         direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+      }
    }
-   return false;
+   return count;
 }
 
 // Valeur en devise du compte d'un mouvement de prix de 'distance' pour 1 lot
@@ -317,13 +344,14 @@ bool StopsAllowed(double slDistance, double tpDistance)
 }
 
 //+------------------------------------------------------------------+
-// Ouvre une position dans le sens demandé (POSITION_TYPE_BUY / SELL)
-void OpenPosition(long type, double unit)
+// Ouvre une position dans le sens demandé (POSITION_TYPE_BUY / SELL),
+// avec un TP à 'tpMultiple' unités (0 = pas de TP)
+void OpenPosition(long type, double unit, double tpMultiple)
 {
    double slDistance = StopLoss   * unit;
-   double tpDistance = TakeProfit * unit;
+   double tpDistance = tpMultiple * unit;
 
-   if(!CheckSpread(slDistance) || !StopsAllowed(slDistance, tpDistance))
+   if(!StopsAllowed(slDistance, tpDistance))
       return;
 
    double lots = CalculateLots(slDistance, tpDistance);
@@ -343,7 +371,7 @@ void OpenPosition(long type, double unit)
       double tp    = (tpDistance > 0) ? NormalizeDouble(price + tpDistance, _Digits) : 0;
 
       if(trade.Buy(lots, _Symbol, price, sl, tp))
-         Print("BUY exécuté | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
+         Print("BUY exécuté | TP à ", DoubleToString(tpMultiple, 1), " | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
       else
          Print("BUY refusé : ", trade.ResultRetcodeDescription());
    }
@@ -354,9 +382,24 @@ void OpenPosition(long type, double unit)
       double tp    = (tpDistance > 0) ? NormalizeDouble(price - tpDistance, _Digits) : 0;
 
       if(trade.Sell(lots, _Symbol, price, sl, tp))
-         Print("SELL exécuté | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
+         Print("SELL exécuté | TP à ", DoubleToString(tpMultiple, 1), " | Lots=", lots, " SL=", sl, " TP=", tp, moneyInfo);
       else
          Print("SELL refusé : ", trade.ResultRetcodeDescription());
+   }
+}
+
+//+------------------------------------------------------------------+
+// Ouvre 'count' positions ensemble, avec des TP échelonnés :
+// TakeProfit, TakeProfit + TakeProfitStep, TakeProfit + 2 x TakeProfitStep...
+void OpenBasket(long type, double unit, int count)
+{
+   if(!CheckSpread(StopLoss * unit))
+      return;
+
+   for(int k = 0; k < count; k++)
+   {
+      double tpMultiple = (TakeProfit > 0) ? TakeProfit + k * TakeProfitStep : 0;
+      OpenPosition(type, unit, tpMultiple);
    }
 }
 
@@ -496,6 +539,8 @@ void OnTick()
       return;
 
    // Index 1 = dernière bougie clôturée, index 2 = celle d'avant, etc.
+   int bars = MathMax(4, MomentumLookback + 2);
+
    double fast[], slow[], rsi[], open[], high[], low[], close[];
    ArraySetAsSeries(fast, true);
    ArraySetAsSeries(slow, true);
@@ -505,16 +550,16 @@ void OnTick()
    ArraySetAsSeries(low, true);
    ArraySetAsSeries(close, true);
 
-   if(CopyBuffer(fastHandle, 0, 0, 4, fast) < 4 ||
-      CopyBuffer(slowHandle, 0, 0, 4, slow) < 4 ||
-      CopyBuffer(rsiHandle,  0, 0, 4, rsi)  < 4 ||
-      CopyOpen (_Symbol, PERIOD_M1, 0, 4, open)  < 4 ||
-      CopyHigh (_Symbol, PERIOD_M1, 0, 4, high)  < 4 ||
-      CopyLow  (_Symbol, PERIOD_M1, 0, 4, low)   < 4 ||
-      CopyClose(_Symbol, PERIOD_M1, 0, 4, close) < 4)
+   if(CopyBuffer(fastHandle, 0, 0, bars, fast) < bars ||
+      CopyBuffer(slowHandle, 0, 0, bars, slow) < bars ||
+      CopyBuffer(rsiHandle,  0, 0, bars, rsi)  < bars ||
+      CopyOpen (_Symbol, PERIOD_M1, 0, bars, open)  < bars ||
+      CopyHigh (_Symbol, PERIOD_M1, 0, bars, high)  < bars ||
+      CopyLow  (_Symbol, PERIOD_M1, 0, bars, low)   < bars ||
+      CopyClose(_Symbol, PERIOD_M1, 0, bars, close) < bars)
       return;   // données pas encore prêtes
 
-   // Sortie si la tendance M1 s'est retournée contre la position
+   // Sortie si la tendance M1 s'est retournée contre les positions
    if(CloseOnTrendReversal)
    {
       if(fast[1] < slow[1]) ClosePositions(POSITION_TYPE_BUY);
@@ -524,7 +569,10 @@ void OnTick()
    if(!IsTradingHour())
       return;
 
-   if(HasOpenPosition())
+   int openDirection = 0;
+   int openCount     = CountOpenPositions(openDirection);
+   int room          = MaxOpenPositions - openCount;
+   if(room <= 0)
       return;
 
    int    tradesToday = 0;
@@ -545,30 +593,70 @@ void OnTick()
    if(trend == 0)
       return;
 
+   // Jamais de positions dans les deux sens en même temps
+   if(openDirection != 0 && openDirection != trend)
+      return;
+
    double unit = DistanceUnit();
    if(unit <= 0)
       return;
 
-   double tolerance = PullbackTolerance * unit;
+   bool buySignal  = false;
+   bool sellSignal = false;
 
-   // Achat : en tendance haussière, le prix revient toucher l'EMA rapide
-   // puis la bougie clôture en hausse au-dessus d'elle (on reprend le train).
-   bool buySignal = trend == 1 &&
-                    MathMin(low[1], low[2]) <= fast[1] + tolerance &&
-                    close[1] > fast[1] &&
-                    close[1] > open[1] &&
-                    rsi[1] > RsiMidLevel;
+   // Momentum : bougie forte dans le sens de la tendance, qui clôture près
+   // de son extrême et casse le plus haut / plus bas des dernières bougies.
+   if(EntryMode == ENTRY_MOMENTUM || EntryMode == ENTRY_BOTH)
+   {
+      double range     = high[1] - low[1];
+      double priorHigh = high[ArrayMaximum(high, 2, MomentumLookback)];
+      double priorLow  = low [ArrayMinimum(low,  2, MomentumLookback)];
 
-   // Vente : symétrique en tendance baissière
-   bool sellSignal = trend == -1 &&
-                     MathMax(high[1], high[2]) >= fast[1] - tolerance &&
-                     close[1] < fast[1] &&
-                     close[1] < open[1] &&
-                     rsi[1] < RsiMidLevel;
+      if(range > 0)
+      {
+         buySignal = buySignal ||
+                     (trend == 1 &&
+                      close[1] - open[1] >= MomentumBody * unit &&
+                      (close[1] - low[1]) / range >= MomentumCloseRatio &&
+                      close[1] > priorHigh &&
+                      rsi[1] > RsiMomentumLevel && rsi[1] > rsi[2]);
+
+         sellSignal = sellSignal ||
+                      (trend == -1 &&
+                       open[1] - close[1] >= MomentumBody * unit &&
+                       (high[1] - close[1]) / range >= MomentumCloseRatio &&
+                       close[1] < priorLow &&
+                       rsi[1] < 100 - RsiMomentumLevel && rsi[1] < rsi[2]);
+      }
+   }
+
+   // Repli : le prix revient toucher l'EMA rapide puis repart dans la tendance
+   if(EntryMode == ENTRY_PULLBACK || EntryMode == ENTRY_BOTH)
+   {
+      double tolerance = PullbackTolerance * unit;
+
+      buySignal = buySignal ||
+                  (trend == 1 &&
+                   MathMin(low[1], low[2]) <= fast[1] + tolerance &&
+                   close[1] > fast[1] &&
+                   close[1] > open[1] &&
+                   rsi[1] > RsiMidLevel);
+
+      sellSignal = sellSignal ||
+                   (trend == -1 &&
+                    MathMax(high[1], high[2]) >= fast[1] - tolerance &&
+                    close[1] < fast[1] &&
+                    close[1] < open[1] &&
+                    rsi[1] < RsiMidLevel);
+   }
+
+   int count = MathMin(TradesPerSignal, room);
+   if(MaxTradesPerDay > 0)
+      count = MathMin(count, MaxTradesPerDay - tradesToday);
 
    if(buySignal)
-      OpenPosition(POSITION_TYPE_BUY, unit);
+      OpenBasket(POSITION_TYPE_BUY, unit, count);
    else if(sellSignal)
-      OpenPosition(POSITION_TYPE_SELL, unit);
+      OpenBasket(POSITION_TYPE_SELL, unit, count);
 }
 //+------------------------------------------------------------------+

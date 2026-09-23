@@ -8,16 +8,20 @@ pensé pour l'**or (XAUUSD)**, le **Bitcoin (BTCUSD)** et le **NASDAQ (NAS100 / 
 1. **Tendance** : EMA 20 au-dessus de l'EMA 50, EMA 50 qui monte, et prix au-dessus
    (inverse pour une tendance baissière). La tendance doit aussi être confirmée
    sur M15 (prix du même côté de son EMA 50). Sans tendance claire, le bot ne trade pas.
-2. **Entrée à chaque repli** : en tendance haussière, dès que le prix revient toucher
-   l'EMA 20 puis qu'une bougie clôture en hausse au-dessus d'elle (RSI > 50), le bot achète.
-   Symétrique à la vente en tendance baissière.
-3. **Petit gain rapide** : le Take Profit est placé à 1 ATR et le lot est calculé pour
-   que ce TP rapporte `TargetProfitMoney` (3 € par défaut). Le break-even protège
-   le trade dès qu'il est à mi-chemin ; la position est fermée si l'EMA 20 repasse
-   de l'autre côté de l'EMA 50.
+2. **Entrée sur le momentum** (par défaut) : en tendance haussière, le bot achète quand
+   une bougie M1 forte (corps ≥ 0,8 ATR) clôture près de son plus haut, casse le plus
+   haut des 5 bougies précédentes, avec un RSI au-dessus de 55 et en hausse.
+   Symétrique à la vente. `EntryMode` permet aussi d'entrer sur les replis vers
+   l'EMA 20, ou sur les deux.
+3. **3 positions ouvertes ensemble** : à chaque signal, le bot ouvre 3 positions avec
+   le même Stop Loss et des Take Profit échelonnés (1 / 1,5 / 2 ATR). Chaque position
+   vise `TargetProfitMoney` (3 € par défaut) : le lot de chacune est calculé pour ça.
+4. **Protection** : le break-even protège les positions dès mi-chemin du premier TP ;
+   tout est fermé si l'EMA 20 repasse de l'autre côté de l'EMA 50.
 
-Une seule position à la fois par symbole ; dès qu'elle est fermée, le bot reprend
-le train au repli suivant. Objectif : beaucoup de petits gains répétés.
+Jamais d'achats et de ventes en même temps sur un même symbole. Dès que des places
+se libèrent (`MaxOpenPositions`), le bot reprend le train au signal suivant.
+Objectif : beaucoup de petits gains répétés.
 
 ## Gain fixe en euros
 
@@ -25,10 +29,10 @@ Avec `TargetProfitMoney = 3`, chaque trade vise 3 € (dans la devise du compte)
 quel que soit le marché : le bot adapte le lot à la distance du TP. Le journal
 (onglet Experts) affiche à chaque trade le gain visé et la perte maximale.
 
-Attention au rapport gain / perte : avec les réglages par défaut (TP 1 ATR,
-SL 1,2 ATR), un gain de 3 € s'accompagne d'une perte maximale d'environ 3,60 €.
-Il faut donc gagner plus de 55 % des trades pour être rentable, commissions
-comprises. Une perte efface plus d'un gain : c'est le point à vérifier en backtest.
+Attention au rapport gain / perte : les 3 positions partagent le même Stop Loss
+(1,2 ATR). Si le marché repart contre vous avant le break-even, les 3 sont perdues
+ensemble : environ 3,60 € + 2,40 € + 1,80 € ≈ **7,80 € de perte** pour **9 € de gain**
+si les 3 TP sont atteints. C'est le point à vérifier en backtest.
 
 Si le lot minimum du courtier donne déjà un gain supérieur à l'objectif, le bot ne
 prend pas le trade (plutôt que de risquer plus que prévu) et l'indique dans le journal.
@@ -64,7 +68,13 @@ Le lot est calculé automatiquement par `TargetProfitMoney` ; `MaxLots` sert de 
 |---|---|
 | `TargetProfitMoney` | Gain visé par trade en devise du compte ; le lot est calculé pour l'atteindre au TP |
 | `RiskPercent` / `Lots` | Si `TargetProfitMoney = 0` : lot pour risquer ce % du solde, sinon lot fixe |
-| `MaxLots` | Lot maximum, quel que soit le calcul |
+| `MaxLots` | Lot maximum par position, quel que soit le calcul |
+| `TradesPerSignal` | Positions ouvertes ensemble à chaque signal (3) |
+| `MaxOpenPositions` | Positions ouvertes en même temps au maximum sur le symbole (3) |
+| `TakeProfitStep` | Écart entre les TP des positions, en ATR |
+| `EntryMode` | Momentum (défaut), repli sur l'EMA 20, ou les deux |
+| `MomentumLookback` / `MomentumBody` / `MomentumCloseRatio` | Définition d'une bougie de momentum |
+| `RsiMomentumLevel` | RSI minimum (achat) ou maximum (100 − niveau, vente) pour le momentum |
 | `DistanceMode` / `AtrPeriod` | Distances en ATR (défaut) ou en pips |
 | `StopLoss` / `TakeProfit` | SL et TP en ATR ; `TakeProfit = 0` laisse le trailing gérer la sortie |
 | `BreakEvenTrigger` / `BreakEvenLock` | Remonte le SL au prix d'entrée + une marge une fois en gain |
@@ -73,11 +83,11 @@ Le lot est calculé automatiquement par `TargetProfitMoney` ; `MaxLots` sert de 
 | `FastEmaPeriod` / `SlowEmaPeriod` | EMA de repli et EMA de direction sur M1 |
 | `UseHigherTimeframe` / `TrendTimeframe` / `TrendEmaPeriod` | Confirmation de la tendance sur M15 |
 | `CloseOnTrendReversal` | Ferme la position quand la tendance M1 s'inverse |
-| `RsiPeriod` / `RsiMidLevel` | Filtre de momentum (RSI au-dessus / en dessous de 50) |
+| `RsiPeriod` / `RsiMidLevel` | Filtre RSI des entrées sur repli (au-dessus / en dessous de 50) |
 | `MaxSpreadPercentOfSL` / `MaxSpreadPoints` | Refuse d'entrer si le spread est trop grand |
 | `MaxSlippagePercentOfSL` | Glissement maximum accepté à l'exécution |
 | `StartHour` / `EndHour` | Plage horaire de trading, heure du serveur (égales = 24h/24) |
-| `MaxTradesPerDay` | Nombre maximum de trades par jour et par symbole |
+| `MaxTradesPerDay` | Nombre maximum de positions ouvertes par jour et par symbole (60) |
 | `MaxDailyLossPercent` | Arrête d'ouvrir des trades pour la journée après cette perte |
 | `DailyProfitTargetMoney` | Arrête d'ouvrir des trades pour la journée une fois ce gain atteint (0 = off) |
 | `MagicNumber` | Identifie les positions du bot (les autres ne sont jamais touchées) |
