@@ -64,5 +64,24 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 
 ## Journal des résultats
 
-_Aucun test pour l'instant. Noter ici chaque backtest / démo : date, marché, période,
-réglages modifiés, nombre de trades, % gagnants, gain net, drawdown max, conclusions._
+_Noter ici chaque backtest / démo : date, marché, période, réglages modifiés,
+nombre de trades, % gagnants, gain net, drawdown max, conclusions._
+
+### 2026-09-23 — Premier backtest v1.90, réglages par défaut (style agressif)
+
+Courtier VT Markets (compte Hedge). Optimisation multi-symboles, période et dépôt non
+précisés (dépôt probablement ~1 000). **Tous les marchés perdent** :
+
+| Symbole | Profit | Trades | Facteur de profit | Drawdown |
+|---|---|---|---|---|
+| BTCUSD | −277 | 1 593 | 0,71 | 29,6 % |
+| USDCAD | −412 | 6 879 | 0,91 | 42,9 % |
+| EURUSD | −456 | 5 817 | 0,88 | 46,7 % |
+| XAUUSD-STD | −550 | 3 260 | 0,84 | 56,7 % |
+| GBPUSD | −612 | 4 389 | 0,79 | 62,0 % |
+| DJ30 | −634 | 3 286 | 0,79 | 67,8 % |
+
+Conclusion : pas d'avantage statistique en l'état. Beaucoup de trades avec un facteur de
+profit juste sous 1 → les coûts (spread ~1 700 points sur BTCUSD) et le rapport gain/perte
+défavorable l'emportent. Pistes : comparer style normal / agressif, TP plus large par
+rapport au spread, entrée momentum (achat en haut de bougie M1) à remettre en cause.
