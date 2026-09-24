@@ -106,3 +106,22 @@ Dépôt 1 000 USD (compte en **dollars**, pas en euros), levier 500. Algorithme 
 Prudence : 2 mois, un seul marché, 4 000 combinaisons → risque élevé de sur-optimisation.
 À valider **sans optimisation** sur une autre période (ex. 01/03 → 01/07/2026) :
 candidat A = agressif TP 2,2 / SL 6 ; candidat B = normal TP 1,0 / SL 1,2 / RSI 70.
+
+### 2026-09-24 — Test simple XAUUSD-STD M1, 01/07 → 01/09/2026, réglages par défaut (agressif)
+
+Pas le test A/B demandé : réglages par défaut (agressif, TP 1,0 / SL 1,2), même période.
+Qualité d'historique **22 % de ticks réels** seulement (résultats moins fiables).
+
+- **−438 $** (−44 %), facteur de profit 0,82, drawdown 46 %, 2 249 trades, 57,5 % gagnants.
+- Gain moyen 1,55 $ / perte moyenne 2,55 $ → il faudrait ~62 % de gagnants.
+- Presque tout au **lot minimum 0,01** : l'objectif 2 $ ne pilote pas le lot sur l'or
+  (TP moyen réel 2,87 $).
+- Sorties : 648 TP (+2,87 $), **636 sorties au break-even** (+0,20 $ en moyenne),
+  948 vraies pertes (−2,55 $). Le break-even à 0,6 ATR coupe beaucoup de trades qui
+  auraient pu aller au TP → hypothèse : break-even trop serré sur M1.
+- Heures (serveur GMT+3) : 16h–23h, session bien détectée. Pire heure : **17h serveur
+  (≈ 10h New York, juste après l'ouverture) : −227 $**.
+- Juillet −375 $, août −63 $.
+
+Hypothèses à tester (sans sur-optimiser) : break-even plus large ou désactivé, éviter la
+première heure après l'ouverture, TP ~2,2 ATR (zone vue en optimisation).
