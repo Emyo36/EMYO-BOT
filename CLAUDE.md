@@ -40,8 +40,9 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 
 ## État actuel
 
-- Version : **1.90**, branche `claude/bonjour-sbyppm`.
-- **Compilé sans erreur** par l'utilisateur dans MetaEditor (v1.90). Pas encore testé.
+- Version : **1.91**, branche `claude/bonjour-sbyppm`.
+- **Compilé sans erreur** par l'utilisateur dans MetaEditor (v1.90) ; v1.91 = simple ajout de
+  contrôles de paramètres, à recompiler. Backtests en cours (voir journal).
   Aucun compilateur MQL5 dans l'environnement cloud : toute modification doit être
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
@@ -85,3 +86,23 @@ Conclusion : pas d'avantage statistique en l'état. Beaucoup de trades avec un f
 profit juste sous 1 → les coûts (spread ~1 700 points sur BTCUSD) et le rapport gain/perte
 défavorable l'emportent. Pistes : comparer style normal / agressif, TP plus large par
 rapport au spread, entrée momentum (achat en haut de bougie M1) à remettre en cause.
+
+### 2026-09-24 — Optimisation XAUUSD-STD M1, 01/07/2026 → 01/09/2026
+
+Dépôt 1 000 USD (compte en **dollars**, pas en euros), levier 500. Algorithme génétique,
+4 122 passes. Paramètres optimisés : `TradingStyle`, `StopLoss` (1,2 → 12), `TakeProfit`
+(1 → 7), `RsiMomentumLevel` (55 → 544 : plage invalide, RSI max = 100 → 3 686 passes à
+0 trade, d'où l'ajout d'un contrôle en v1.91). Pas de résultats forward dans le fichier.
+
+- 436 passes avec trades, dont **69 positives** seulement.
+- **Agressif** : zone cohérente **TP 2,1 → 2,6 ATR** (30 passes positives sur 33).
+  Meilleur : TP 2,2 / SL 6,72 → **+161 $**, 1 092 trades, facteur de profit 1,16,
+  drawdown 17 %. Le SL change peu le résultat (la sortie sur retournement de tendance
+  ferme avant) mais un SL large augmente la perte possible.
+- **Normal** : meilleur TP 1,0 / SL 1,2 / RSI 71,5 → **+49 $**, 182 trades, facteur de
+  profit 1,31, drawdown **4,4 %** (meilleur rapport gain / risque). Moyenne des passes
+  normales ≈ −4 $, agressives ≈ −48 $.
+
+Prudence : 2 mois, un seul marché, 4 000 combinaisons → risque élevé de sur-optimisation.
+À valider **sans optimisation** sur une autre période (ex. 01/03 → 01/07/2026) :
+candidat A = agressif TP 2,2 / SL 6 ; candidat B = normal TP 1,0 / SL 1,2 / RSI 70.

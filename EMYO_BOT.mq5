@@ -3,7 +3,7 @@
 //|        Or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100/USTEC)       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.90"
+#property version   "1.91"
 
 #include <Trade\Trade.mqh>
 
@@ -161,7 +161,9 @@ int OnInit()
       (TargetProfitMoney > 0 && TakeProfit <= 0) ||
       TradesPerSignal < 1 || MaxOpenPositions < 1 || TakeProfitStep < 0 ||
       MomentumLookback < 1 || MomentumBody < 0 ||
-      MomentumCloseRatio < 0 || MomentumCloseRatio > 1)
+      MomentumCloseRatio < 0 || MomentumCloseRatio > 1 ||
+      RsiMomentumLevel < 50 || RsiMomentumLevel > 100 ||
+      RsiMidLevel < 0 || RsiMidLevel > 100)
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
