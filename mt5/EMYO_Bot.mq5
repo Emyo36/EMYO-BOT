@@ -1,7 +1,7 @@
 //+------------------------------------------------------------------+
 //| EMYO_Bot.mq5                                                     |
 //| Scalping session New York : tendance UT supérieure, prise de     |
-//| liquidité, Fibonacci 0.618-0.786, order block, FVG, momentum.    |
+//| liquidité, Fibonacci 0.5-0.79, order block ou FVG, momentum.     |
 //| Maximum 3 trades par jour.                                       |
 //| Même logique que tradingview/EMYO_Strategy.pine                  |
 //+------------------------------------------------------------------+
@@ -11,6 +11,14 @@
 
 #include <Trade/Trade.mqh>
 
+enum ENUM_CONFLUENCE
+  {
+   CONF_OB_OR_FVG = 0, // OB ou FVG
+   CONF_OB        = 1, // OB
+   CONF_FVG       = 2, // FVG
+   CONF_NONE      = 3  // Aucune
+  };
+
 //--- Paramètres
 input group "Tendance (UT supérieure)"
 input ENUM_TIMEFRAMES InpTrendTF = PERIOD_H1;   // Unité de temps tendance
@@ -18,8 +26,8 @@ input int    InpEmaFast          = 50;          // EMA rapide
 input int    InpEmaSlow          = 200;         // EMA lente
 
 input group "Session (heure SERVEUR du broker)"
-input int    InpSessStartHour    = 16;          // Début session - heure (16:30 = 9:30 NY pour un broker GMT+3)
-input int    InpSessStartMin     = 30;          // Début session - minute
+input int    InpSessStartHour    = 15;          // Début session - heure (15:00 = 8:00 NY pour un broker GMT+3)
+input int    InpSessStartMin     = 0;           // Début session - minute
 input int    InpSessEndHour      = 19;          // Fin session - heure
 input int    InpSessEndMin       = 0;           // Fin session - minute
 input bool   InpCloseAtSessionEnd = true;       // Fermer les positions à la fin de la session
@@ -27,19 +35,18 @@ input int    InpMaxTradesPerDay  = 3;           // Trades max par jour
 input bool   InpCountAllSymbols  = true;        // Limite commune à tous les actifs (BTC, Gold, NAS, DJ)
 
 input group "Setup"
-input int    InpPivotLen         = 3;           // Longueur des swings (pivots)
+input int    InpPivotLen         = 2;           // Longueur des swings (pivots)
 input int    InpSetupExpiryBars  = 30;          // Expiration du setup (barres)
-input double InpFibTop           = 0.618;       // Fibo - haut de zone
-input double InpFibBottom        = 0.786;       // Fibo - bas de zone
-input bool   InpRequireOB        = true;        // Exiger un order block dans la zone Fibo
-input bool   InpRequireFVG       = false;       // Exiger un FVG (imbalance) dans l'impulsion
+input double InpFibTop           = 0.5;         // Fibo - haut de zone
+input double InpFibBottom        = 0.79;        // Fibo - bas de zone
+input ENUM_CONFLUENCE InpConfluence = CONF_OB_OR_FVG; // Confluence exigée dans la zone Fibo
 input int    InpRsiPeriod        = 14;          // RSI (momentum)
 
 input group "Volatilité"
 input bool   InpUseVolFilter     = true;        // Trader seulement si le marché est volatil
 input int    InpAtrPeriod        = 14;          // ATR
 input int    InpAtrMaPeriod      = 50;          // Moyenne de l'ATR
-input double InpVolMult          = 1.0;         // ATR minimum (x la moyenne)
+input double InpVolMult          = 0.8;         // ATR minimum (x la moyenne)
 
 input group "Risque"
 input double InpRiskPercent      = 1.0;         // Risque par trade (% du solde)
@@ -60,6 +67,8 @@ struct Setup
    double            obTop;
    double            obBot;
    bool              fvg;
+   double            fvgTop;
+   double            fvgBot;
    bool              touched;
    int               age;
   };
@@ -85,7 +94,7 @@ int OnInit()
      }
    if(InpFibTop >= InpFibBottom)
      {
-      Print("Le Fibo haut de zone doit être inférieur au Fibo bas de zone (ex. 0.618 < 0.786).");
+      Print("Le Fibo haut de zone doit être inférieur au Fibo bas de zone (ex. 0.5 < 0.79).");
       return(INIT_PARAMETERS_INCORRECT);
      }
    hEmaFast = iMA(_Symbol, InpTrendTF, InpEmaFast, 0, MODE_EMA, PRICE_CLOSE);
@@ -340,8 +349,8 @@ void OnNewBar()
    double es = BufferValue(hEmaSlow, 1);
    double hc = iClose(_Symbol, InpTrendTF, 1);
    bool dataOk    = (ef != EMPTY_VALUE && es != EMPTY_VALUE && hc > 0);
-   bool bullTrend = dataOk && ef > es && hc > ef;
-   bool bearTrend = dataOk && ef < es && hc < ef;
+   bool bullTrend = dataOk && ef > es && hc > es;
+   bool bearTrend = dataOk && ef < es && hc < es;
 
    //--- Momentum
    double r1 = BufferValue(hRsi, 1);
@@ -388,17 +397,22 @@ void OnNewBar()
       ZeroMemory(S);
 
    //================= LONG =================
-   bool longSignal = false;
+   bool   longSignal = false;
+   double longPoiBot = 0.0;
    if(L.state == 2)
      {
       double rng  = L.imp - L.sweep;
       double z618 = L.imp - rng * InpFibTop;
       double z786 = L.imp - rng * InpFibBottom;
-      bool obOk   = !InpRequireOB || (L.obTop >= z786 && L.obBot <= z618);
-      bool fvgOk  = !InpRequireFVG || L.fvg;
+      bool obIn   = L.obTop >= z786 && L.obBot <= z618;
+      bool fvgIn  = L.fvg && L.fvgTop >= z786 && L.fvgBot <= z618;
+      bool confOk = InpConfluence == CONF_NONE
+                    || (InpConfluence != CONF_FVG && obIn)
+                    || (InpConfluence != CONF_OB && fvgIn);
+      longPoiBot  = (obIn && InpConfluence != CONF_FVG) ? L.obBot : z786;
       if(l <= z618)
          L.touched = true;
-      if(L.touched && momUp && c > L.sweep && c < L.imp && obOk && fvgOk && canTrade)
+      if(L.touched && momUp && c > L.sweep && c < L.imp && confOk && canTrade)
          longSignal = true;
       if(!L.touched && h > L.imp)
          L.imp = h;
@@ -413,7 +427,11 @@ void OnNewBar()
          L.obBot = l;
         }
       if(l > h3)
-         L.fvg = true;
+        {
+         L.fvgTop = L.fvg ? MathMax(L.fvgTop, l) : l;
+         L.fvgBot = L.fvg ? MathMin(L.fvgBot, h3) : h3;
+         L.fvg    = true;
+        }
       if(c > L.bos)
         {
          L.state   = 2;
@@ -434,17 +452,22 @@ void OnNewBar()
      }
 
    //================= SHORT =================
-   bool shortSignal = false;
+   bool   shortSignal = false;
+   double shortPoiTop = 0.0;
    if(S.state == 2)
      {
       double rng  = S.sweep - S.imp;
       double z618 = S.imp + rng * InpFibTop;
       double z786 = S.imp + rng * InpFibBottom;
-      bool obOk   = !InpRequireOB || (S.obBot <= z786 && S.obTop >= z618);
-      bool fvgOk  = !InpRequireFVG || S.fvg;
+      bool obIn   = S.obBot <= z786 && S.obTop >= z618;
+      bool fvgIn  = S.fvg && S.fvgBot <= z786 && S.fvgTop >= z618;
+      bool confOk = InpConfluence == CONF_NONE
+                    || (InpConfluence != CONF_FVG && obIn)
+                    || (InpConfluence != CONF_OB && fvgIn);
+      shortPoiTop = (obIn && InpConfluence != CONF_FVG) ? S.obTop : z786;
       if(h >= z618)
          S.touched = true;
-      if(S.touched && momDn && c < S.sweep && c > S.imp && obOk && fvgOk && canTrade)
+      if(S.touched && momDn && c < S.sweep && c > S.imp && confOk && canTrade)
          shortSignal = true;
       if(!S.touched && l < S.imp)
          S.imp = l;
@@ -459,7 +482,11 @@ void OnNewBar()
          S.obBot = l;
         }
       if(h < l3)
-         S.fvg = true;
+        {
+         S.fvgTop = S.fvg ? MathMax(S.fvgTop, l3) : l3;
+         S.fvgBot = S.fvg ? MathMin(S.fvgBot, h) : h;
+         S.fvg    = true;
+        }
       if(c < S.bos)
         {
          S.state   = 2;
@@ -482,14 +509,14 @@ void OnNewBar()
    //================= ORDRES =================
    if(longSignal)
      {
-      double sl = MathMin(InpRequireOB ? L.obBot : L.sweep, l) - buf;
+      double sl = MathMin(longPoiBot, l) - buf;
       if(OpenTrade(true, sl))
          tradesToday++;
       ZeroMemory(L);
      }
    if(shortSignal && !longSignal)
      {
-      double sl = MathMax(InpRequireOB ? S.obTop : S.sweep, h) + buf;
+      double sl = MathMax(shortPoiTop, h) + buf;
       if(OpenTrade(false, sl))
          tradesToday++;
       ZeroMemory(S);

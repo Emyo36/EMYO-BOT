@@ -1,6 +1,6 @@
 //@version=6
 // EMYO Bot — Stratégie de scalping session New York
-// Tendance UT supérieure + prise de liquidité + Fibonacci 0.618–0.786 + order block + FVG + momentum.
+// Tendance UT supérieure + prise de liquidité + Fibonacci 0.5–0.79 + order block ou FVG + momentum + volatilité.
 // Maximum 3 trades par jour. Même logique que l'Expert Advisor MT5 (mt5/EMYO_Bot.mq5).
 strategy("EMYO Bot — Fibo + OB + Session NY", shorttitle="EMYO", overlay=true, initial_capital=10000, pyramiding=0, process_orders_on_close=true)
 
@@ -11,24 +11,23 @@ emaFastLen = input.int(50, "EMA rapide", minval=1, group=grpTrend)
 emaSlowLen = input.int(200, "EMA lente", minval=1, group=grpTrend)
 
 grpSess    = "Session"
-sess       = input.session("0930-1200", "Session New York (heure de NY)", group=grpSess)
+sess       = input.session("0800-1200", "Session New York (heure de NY)", group=grpSess)
 closeAtEnd = input.bool(true, "Fermer les positions à la fin de la session", group=grpSess)
 maxTrades  = input.int(3, "Trades max par jour", minval=1, group=grpSess)
 
 grpSetup   = "Setup"
-pivLen     = input.int(3, "Longueur des swings (pivots)", minval=1, group=grpSetup)
+pivLen     = input.int(2, "Longueur des swings (pivots)", minval=1, group=grpSetup)
 expiryBars = input.int(30, "Expiration du setup (barres)", minval=1, group=grpSetup)
-fibTop     = input.float(0.618, "Fibo — haut de zone", step=0.001, group=grpSetup)
-fibBot     = input.float(0.786, "Fibo — bas de zone", step=0.001, group=grpSetup)
-requireOB  = input.bool(true, "Exiger un order block dans la zone Fibo", group=grpSetup)
-requireFVG = input.bool(false, "Exiger un FVG (imbalance) dans l'impulsion", group=grpSetup)
+fibTop     = input.float(0.5, "Fibo — haut de zone", step=0.001, group=grpSetup)
+fibBot     = input.float(0.79, "Fibo — bas de zone", step=0.001, group=grpSetup)
+confMode   = input.string("OB ou FVG", "Confluence exigée dans la zone Fibo", options=["OB ou FVG", "OB", "FVG", "Aucune"], group=grpSetup)
 rsiLen     = input.int(14, "RSI (momentum)", minval=1, group=grpSetup)
 
 grpVol     = "Volatilité"
 useVolFilt = input.bool(true, "Trader seulement si le marché est volatil", group=grpVol)
 atrLen     = input.int(14, "ATR", minval=1, group=grpVol)
 atrMaLen   = input.int(50, "Moyenne de l'ATR", minval=1, group=grpVol)
-volMult    = input.float(1.0, "ATR minimum (x la moyenne)", minval=0.1, step=0.1, group=grpVol)
+volMult    = input.float(0.8, "ATR minimum (x la moyenne)", minval=0.1, step=0.1, group=grpVol)
 
 grpRisk    = "Risque"
 riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval=0.01, step=0.1, group=grpRisk)
@@ -40,8 +39,8 @@ slBufAtr   = input.float(0.1, "Marge au-delà du stop (x ATR)", minval=0.0, step
 // ───────────────────────────── Tendance ─────────────────────────────
 // Dernière bougie UT supérieure clôturée : pas de repaint.
 [htfFast, htfSlow, htfClose] = request.security(syminfo.tickerid, htfTf, [ta.ema(close, emaFastLen)[1], ta.ema(close, emaSlowLen)[1], close[1]], lookahead=barmerge.lookahead_on)
-bullTrend = htfFast > htfSlow and htfClose > htfFast
-bearTrend = htfFast < htfSlow and htfClose < htfFast
+bullTrend = htfFast > htfSlow and htfClose > htfSlow
+bearTrend = htfFast < htfSlow and htfClose < htfSlow
 
 // ───────────────────────────── Session & compteur journalier ─────────────────────────────
 tz        = "America/New_York"
@@ -75,6 +74,8 @@ var float lImp   = na
 var float lObTop = na
 var float lObBot = na
 var bool  lFvg   = false
+var float lFvgTop = na
+var float lFvgBot = na
 var bool  lTouch = false
 var int   lStart = na
 
@@ -85,6 +86,8 @@ var float sImp   = na
 var float sObTop = na
 var float sObBot = na
 var bool  sFvg   = false
+var float sFvgTop = na
+var float sFvgBot = na
 var bool  sTouch = false
 var int   sStart = na
 
@@ -105,16 +108,19 @@ if sState == 2 and close > sSweep
 // ───────────────────────────── LONG ─────────────────────────────
 float lZ618 = na
 float lZ786 = na
+float lPoiBot = na
 bool longSignal = false
 if lState == 2
     lRng   = lImp - lSweep
     lZ618 := lImp - lRng * fibTop
     lZ786 := lImp - lRng * fibBot
-    lObOk  = not requireOB or (lObTop >= lZ786 and lObBot <= lZ618)
-    lFvgOk = not requireFVG or lFvg
+    lObIn   = lObTop >= lZ786 and lObBot <= lZ618
+    lFvgIn  = lFvg and lFvgTop >= lZ786 and lFvgBot <= lZ618
+    lConfOk = confMode == "Aucune" or (confMode != "FVG" and lObIn) or (confMode != "OB" and lFvgIn)
+    lPoiBot := lObIn and confMode != "FVG" ? lObBot : lZ786
     if low <= lZ618
         lTouch := true
-    if lTouch and momUp and close > lSweep and close < lImp and lObOk and lFvgOk and canTrade
+    if lTouch and momUp and close > lSweep and close < lImp and lConfOk and canTrade
         longSignal := true
     if not lTouch and high > lImp
         lImp := high
@@ -126,7 +132,9 @@ if lState == 1
         lObTop := high
         lObBot := low
     if low > high[2]
-        lFvg := true
+        lFvgTop := lFvg ? math.max(lFvgTop, low) : low
+        lFvgBot := lFvg ? math.min(lFvgBot, high[2]) : high[2]
+        lFvg    := true
     if close > lBos
         lState := 2
         lImp   := high
@@ -145,16 +153,19 @@ if lState == 0 and inSession and bullTrend and not na(plRef) and not na(phRef) a
 // ───────────────────────────── SHORT ─────────────────────────────
 float sZ618 = na
 float sZ786 = na
+float sPoiTop = na
 bool shortSignal = false
 if sState == 2
     sRng   = sSweep - sImp
     sZ618 := sImp + sRng * fibTop
     sZ786 := sImp + sRng * fibBot
-    sObOk  = not requireOB or (sObBot <= sZ786 and sObTop >= sZ618)
-    sFvgOk = not requireFVG or sFvg
+    sObIn   = sObBot <= sZ786 and sObTop >= sZ618
+    sFvgIn  = sFvg and sFvgBot <= sZ786 and sFvgTop >= sZ618
+    sConfOk = confMode == "Aucune" or (confMode != "FVG" and sObIn) or (confMode != "OB" and sFvgIn)
+    sPoiTop := sObIn and confMode != "FVG" ? sObTop : sZ786
     if high >= sZ618
         sTouch := true
-    if sTouch and momDn and close < sSweep and close > sImp and sObOk and sFvgOk and canTrade
+    if sTouch and momDn and close < sSweep and close > sImp and sConfOk and canTrade
         shortSignal := true
     if not sTouch and low < sImp
         sImp := low
@@ -166,7 +177,9 @@ if sState == 1
         sObTop := high
         sObBot := low
     if high < low[2]
-        sFvg := true
+        sFvgTop := sFvg ? math.max(sFvgTop, low[2]) : low[2]
+        sFvgBot := sFvg ? math.min(sFvgBot, high) : high
+        sFvg    := true
     if close < sBos
         sState := 2
         sImp   := low
@@ -187,7 +200,7 @@ var float tradeRisk = na
 var float tradeTp   = na
 var bool  stopMoved = false
 if longSignal
-    lSl   = math.min(requireOB ? lObBot : lSweep, low) - buf
+    lSl   = math.min(lPoiBot, low) - buf
     lDist = close - lSl
     if lDist > 0
         lTp  = close + rr * lDist
@@ -202,7 +215,7 @@ if longSignal
     lState := 0
 
 if shortSignal and not longSignal
-    sSl   = math.max(requireOB ? sObTop : sSweep, high) + buf
+    sSl   = math.max(sPoiTop, high) + buf
     sDist = sSl - close
     if sDist > 0
         sTp  = close - rr * sDist
@@ -235,9 +248,9 @@ if not na(pl)
 
 // ───────────────────────────── Affichage ─────────────────────────────
 bgcolor(inSession ? color.new(color.blue, 92) : na, title="Session NY")
-plot(lZ618, "Long Fibo 0.618", color.new(color.teal, 0), style=plot.style_linebr)
-plot(lZ786, "Long Fibo 0.786", color.new(color.teal, 40), style=plot.style_linebr)
-plot(sZ618, "Short Fibo 0.618", color.new(color.maroon, 0), style=plot.style_linebr)
-plot(sZ786, "Short Fibo 0.786", color.new(color.maroon, 40), style=plot.style_linebr)
+plot(lZ618, "Long Fibo haut de zone", color.new(color.teal, 0), style=plot.style_linebr)
+plot(lZ786, "Long Fibo bas de zone", color.new(color.teal, 40), style=plot.style_linebr)
+plot(sZ618, "Short Fibo bas de zone", color.new(color.maroon, 0), style=plot.style_linebr)
+plot(sZ786, "Short Fibo haut de zone", color.new(color.maroon, 40), style=plot.style_linebr)
 plotshape(longSignal, "Signal long", shape.triangleup, location.belowbar, color.teal, size=size.small)
 plotshape(shortSignal and not longSignal, "Signal short", shape.triangledown, location.abovebar, color.maroon, size=size.small)
