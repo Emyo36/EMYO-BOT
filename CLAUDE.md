@@ -151,3 +151,19 @@ positives de l'optimisation de juillet-août étaient de la sur-optimisation. Le
 d'entrée (momentum M1 dans la tendance) n'a pas d'avantage sur l'or chez ce courtier.
 Arrêter d'ajuster les paramètres ; changer l'idée de base (proposé à l'utilisateur :
 retour à la moyenne sur M1, tendance sur M5/M15, ou stratégie de la vidéo).
+
+### 2026-09-24 — Premier test EMYO SMC v1.00, XAUUSD-STD M1, 01/03 → 01/09/2026
+
+Compilé et lancé sans problème. Réglages par défaut. Qualité d'historique 7 % de ticks réels.
+
+- **−31 $** (−3 %), drawdown max **5 %**, facteur de profit 0,62, **27 trades seulement**
+  en 6 mois (20 ventes, 7 achats), 41 % gagnants. Gain moyen 4,70 $ / perte moyenne 5,19 $.
+- Aucun trade en juillet-août, et en général **1 seule position par signal au lieu de 3**.
+  Cause : sur l'or, même le lot minimum 0,01 rapporte plus que `MaxProfitAtMinLot` (10 $)
+  aux TP 2R/3R (le risque SMC fait plusieurs $) → positions ignorées.
+- 27 trades = échantillon **beaucoup trop petit** pour conclure (ni bon ni mauvais).
+
+Prochain test proposé : `TargetProfitMoney = 0`, `RiskPercent = 0`, `Lots = 0.01`
+(lot fixe) pour que chaque signal ouvre ses 3 positions et avoir un vrai échantillon.
+Conflit à expliquer : l'objectif « 2 $ par trade » est incompatible avec le lot minimum
+de l'or quand le stop est placé sur la structure.
