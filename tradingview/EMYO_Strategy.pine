@@ -1,0 +1,216 @@
+//@version=6
+// EMYO Bot — Stratégie de scalping session New York
+// Tendance UT supérieure + prise de liquidité + Fibonacci 0.618–0.786 + order block + FVG + momentum.
+// Maximum 3 trades par jour. Même logique que l'Expert Advisor MT5 (mt5/EMYO_Bot.mq5).
+strategy("EMYO Bot — Fibo + OB + Session NY", shorttitle="EMYO", overlay=true, initial_capital=10000, pyramiding=0, process_orders_on_close=true)
+
+// ───────────────────────────── Paramètres ─────────────────────────────
+grpTrend   = "Tendance (UT supérieure)"
+htfTf      = input.timeframe("60", "Unité de temps tendance", group=grpTrend)
+emaFastLen = input.int(50, "EMA rapide", minval=1, group=grpTrend)
+emaSlowLen = input.int(200, "EMA lente", minval=1, group=grpTrend)
+
+grpSess    = "Session"
+sess       = input.session("0930-1200", "Session New York (heure de NY)", group=grpSess)
+closeAtEnd = input.bool(true, "Fermer les positions à la fin de la session", group=grpSess)
+maxTrades  = input.int(3, "Trades max par jour", minval=1, group=grpSess)
+
+grpSetup   = "Setup"
+pivLen     = input.int(3, "Longueur des swings (pivots)", minval=1, group=grpSetup)
+expiryBars = input.int(30, "Expiration du setup (barres)", minval=1, group=grpSetup)
+fibTop     = input.float(0.618, "Fibo — haut de zone", step=0.001, group=grpSetup)
+fibBot     = input.float(0.786, "Fibo — bas de zone", step=0.001, group=grpSetup)
+requireOB  = input.bool(true, "Exiger un order block dans la zone Fibo", group=grpSetup)
+requireFVG = input.bool(false, "Exiger un FVG (imbalance) dans l'impulsion", group=grpSetup)
+rsiLen     = input.int(14, "RSI (momentum)", minval=1, group=grpSetup)
+
+grpRisk    = "Risque"
+riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval=0.01, step=0.1, group=grpRisk)
+rr         = input.float(2.0, "Ratio risque/rendement", minval=0.1, step=0.1, group=grpRisk)
+slBufTicks = input.int(20, "Marge au-delà du stop (ticks)", minval=0, group=grpRisk)
+
+// ───────────────────────────── Tendance ─────────────────────────────
+// Dernière bougie UT supérieure clôturée : pas de repaint.
+[htfFast, htfSlow, htfClose] = request.security(syminfo.tickerid, htfTf, [ta.ema(close, emaFastLen)[1], ta.ema(close, emaSlowLen)[1], close[1]], lookahead=barmerge.lookahead_on)
+bullTrend = htfFast > htfSlow and htfClose > htfFast
+bearTrend = htfFast < htfSlow and htfClose < htfFast
+
+// ───────────────────────────── Session & compteur journalier ─────────────────────────────
+tz        = "America/New_York"
+inSession = not na(time(timeframe.period, sess, tz))
+dayKey    = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+var int tradesToday = 0
+if dayKey != dayKey[1]
+    tradesToday := 0
+canTrade = inSession and tradesToday < maxTrades and strategy.position_size == 0
+
+// ───────────────────────────── Momentum, swings, FVG ─────────────────────────────
+rsi   = ta.rsi(close, rsiLen)
+momUp = rsi > rsi[1] and close > open
+momDn = rsi < rsi[1] and close < open
+buf   = slBufTicks * syminfo.mintick
+
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+var float lastPH = na
+var float lastPL = na
+phRef = lastPH
+plRef = lastPL
+
+// États : 0 = rien, 1 = liquidité prise (attente cassure de structure), 2 = impulsion validée (attente retracement Fibo)
+var int   lState = 0
+var float lSweep = na
+var float lBos   = na
+var float lImp   = na
+var float lObTop = na
+var float lObBot = na
+var bool  lFvg   = false
+var bool  lTouch = false
+var int   lStart = na
+
+var int   sState = 0
+var float sSweep = na
+var float sBos   = na
+var float sImp   = na
+var float sObTop = na
+var float sObBot = na
+var bool  sFvg   = false
+var bool  sTouch = false
+var int   sStart = na
+
+if not inSession
+    lState := 0
+    sState := 0
+
+// Expiration / invalidation
+if lState != 0 and bar_index - lStart > expiryBars
+    lState := 0
+if lState == 2 and close < lSweep
+    lState := 0
+if sState != 0 and bar_index - sStart > expiryBars
+    sState := 0
+if sState == 2 and close > sSweep
+    sState := 0
+
+// ───────────────────────────── LONG ─────────────────────────────
+float lZ618 = na
+float lZ786 = na
+bool longSignal = false
+if lState == 2
+    lRng   = lImp - lSweep
+    lZ618 := lImp - lRng * fibTop
+    lZ786 := lImp - lRng * fibBot
+    lObOk  = not requireOB or (lObTop >= lZ786 and lObBot <= lZ618)
+    lFvgOk = not requireFVG or lFvg
+    if low <= lZ618
+        lTouch := true
+    if lTouch and momUp and close > lSweep and close < lImp and lObOk and lFvgOk and canTrade
+        longSignal := true
+    if not lTouch and high > lImp
+        lImp := high
+
+if lState == 1
+    if low < lSweep
+        lSweep := low
+    if close < open
+        lObTop := high
+        lObBot := low
+    if low > high[2]
+        lFvg := true
+    if close > lBos
+        lState := 2
+        lImp   := high
+        lTouch := false
+
+if lState == 0 and inSession and bullTrend and not na(plRef) and not na(phRef) and low < plRef and close > plRef and phRef > close
+    lState := 1
+    lSweep := low
+    lBos   := phRef
+    lObTop := high
+    lObBot := low
+    lFvg   := false
+    lTouch := false
+    lStart := bar_index
+
+// ───────────────────────────── SHORT ─────────────────────────────
+float sZ618 = na
+float sZ786 = na
+bool shortSignal = false
+if sState == 2
+    sRng   = sSweep - sImp
+    sZ618 := sImp + sRng * fibTop
+    sZ786 := sImp + sRng * fibBot
+    sObOk  = not requireOB or (sObBot <= sZ786 and sObTop >= sZ618)
+    sFvgOk = not requireFVG or sFvg
+    if high >= sZ618
+        sTouch := true
+    if sTouch and momDn and close < sSweep and close > sImp and sObOk and sFvgOk and canTrade
+        shortSignal := true
+    if not sTouch and low < sImp
+        sImp := low
+
+if sState == 1
+    if high > sSweep
+        sSweep := high
+    if close > open
+        sObTop := high
+        sObBot := low
+    if high < low[2]
+        sFvg := true
+    if close < sBos
+        sState := 2
+        sImp   := low
+        sTouch := false
+
+if sState == 0 and inSession and bearTrend and not na(plRef) and not na(phRef) and high > phRef and close < phRef and plRef < close
+    sState := 1
+    sSweep := high
+    sBos   := plRef
+    sObTop := high
+    sObBot := low
+    sFvg   := false
+    sTouch := false
+    sStart := bar_index
+
+// ───────────────────────────── Ordres ─────────────────────────────
+if longSignal
+    lSl   = math.min(requireOB ? lObBot : lSweep, low) - buf
+    lDist = close - lSl
+    if lDist > 0
+        lTp  = close + rr * lDist
+        lQty = strategy.equity * riskPct / 100 / (lDist * syminfo.pointvalue)
+        strategy.entry("Long", strategy.long, qty=lQty)
+        strategy.exit("Long Exit", "Long", stop=lSl, limit=lTp)
+        tradesToday += 1
+        alert('{"action":"buy","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(lSl, format.mintick) + ',"tp":' + str.tostring(lTp, format.mintick) + '}', alert.freq_once_per_bar_close)
+    lState := 0
+
+if shortSignal and not longSignal
+    sSl   = math.max(requireOB ? sObTop : sSweep, high) + buf
+    sDist = sSl - close
+    if sDist > 0
+        sTp  = close - rr * sDist
+        sQty = strategy.equity * riskPct / 100 / (sDist * syminfo.pointvalue)
+        strategy.entry("Short", strategy.short, qty=sQty)
+        strategy.exit("Short Exit", "Short", stop=sSl, limit=sTp)
+        tradesToday += 1
+        alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(sSl, format.mintick) + ',"tp":' + str.tostring(sTp, format.mintick) + '}', alert.freq_once_per_bar_close)
+    sState := 0
+
+if closeAtEnd and not inSession and strategy.position_size != 0
+    strategy.close_all(comment="Fin de session")
+
+// Mise à jour des swings après usage (la barre courante ne se sert pas de son propre pivot)
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// ───────────────────────────── Affichage ─────────────────────────────
+bgcolor(inSession ? color.new(color.blue, 92) : na, title="Session NY")
+plot(lZ618, "Long Fibo 0.618", color.new(color.teal, 0), style=plot.style_linebr)
+plot(lZ786, "Long Fibo 0.786", color.new(color.teal, 40), style=plot.style_linebr)
+plot(sZ618, "Short Fibo 0.618", color.new(color.maroon, 0), style=plot.style_linebr)
+plot(sZ786, "Short Fibo 0.786", color.new(color.maroon, 40), style=plot.style_linebr)
+plotshape(longSignal, "Signal long", shape.triangleup, location.belowbar, color.teal, size=size.small)
+plotshape(shortSignal and not longSignal, "Signal short", shape.triangledown, location.abovebar, color.maroon, size=size.small)
