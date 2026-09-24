@@ -31,9 +31,10 @@ volMult    = input.float(0.8, "ATR minimum (x la moyenne)", minval=0.1, step=0.1
 
 grpRisk    = "Risque"
 riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval=0.01, step=0.1, group=grpRisk)
-rr         = input.float(2.0, "TP final (en R)", minval=0.1, step=0.1, group=grpRisk)
-tp1R       = input.float(1.0, "TP1 (en R) : déclenche le déplacement du stop", minval=0.1, step=0.1, group=grpRisk)
-lockR      = input.float(1.0, "Stop déplacé à (en R) une fois TP1 touché", minval=0.0, step=0.1, group=grpRisk)
+rr         = input.float(2.5, "TP final (en R)", minval=0.1, step=0.1, group=grpRisk)
+tp1R       = input.float(1.0, "TP1 (en R)", minval=0.1, step=0.1, group=grpRisk)
+tp1Pct     = input.float(50, "Part de la position fermée au TP1 (%)", minval=0, maxval=100, step=5, group=grpRisk)
+lockR      = input.float(0.1, "Stop après TP1 (en R, 0 = point d'entrée)", minval=0.0, step=0.1, group=grpRisk)
 slBufAtr   = input.float(0.1, "Marge au-delà du stop (x ATR)", minval=0.0, step=0.05, group=grpRisk)
 
 // ───────────────────────────── Tendance ─────────────────────────────
@@ -206,7 +207,8 @@ if longSignal
         lTp  = close + rr * lDist
         lQty = strategy.equity * riskPct / 100 / (lDist * syminfo.pointvalue)
         strategy.entry("Long", strategy.long, qty=lQty)
-        strategy.exit("Long Exit", "Long", stop=lSl, limit=lTp)
+        strategy.exit("Long TP1", "Long", qty_percent=tp1Pct, stop=lSl, limit=close + tp1R * lDist)
+        strategy.exit("Long TP2", "Long", stop=lSl, limit=lTp)
         tradeRisk := lDist
         tradeTp   := lTp
         stopMoved := false
@@ -221,7 +223,8 @@ if shortSignal and not longSignal
         sTp  = close - rr * sDist
         sQty = strategy.equity * riskPct / 100 / (sDist * syminfo.pointvalue)
         strategy.entry("Short", strategy.short, qty=sQty)
-        strategy.exit("Short Exit", "Short", stop=sSl, limit=sTp)
+        strategy.exit("Short TP1", "Short", qty_percent=tp1Pct, stop=sSl, limit=close - tp1R * sDist)
+        strategy.exit("Short TP2", "Short", stop=sSl, limit=sTp)
         tradeRisk := sDist
         tradeTp   := sTp
         stopMoved := false
@@ -229,12 +232,12 @@ if shortSignal and not longSignal
         alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(sSl, format.mintick) + ',"tp":' + str.tostring(sTp, format.mintick) + '}', alert.freq_once_per_bar_close)
     sState := 0
 
-// TP1 touché : le stop passe au niveau verrouillé, le reste de la position vise le TP final
+// TP1 touché : une partie est encaissée, le stop du reste passe au point d'entrée (+ lockR) et le reste vise le TP final
 if strategy.position_size > 0 and not stopMoved and high >= strategy.position_avg_price + tp1R * tradeRisk
-    strategy.exit("Long Exit", "Long", stop=strategy.position_avg_price + lockR * tradeRisk, limit=tradeTp)
+    strategy.exit("Long TP2", "Long", stop=strategy.position_avg_price + lockR * tradeRisk, limit=tradeTp)
     stopMoved := true
 if strategy.position_size < 0 and not stopMoved and low <= strategy.position_avg_price - tp1R * tradeRisk
-    strategy.exit("Short Exit", "Short", stop=strategy.position_avg_price - lockR * tradeRisk, limit=tradeTp)
+    strategy.exit("Short TP2", "Short", stop=strategy.position_avg_price - lockR * tradeRisk, limit=tradeTp)
     stopMoved := true
 
 if closeAtEnd and not inSession and strategy.position_size != 0

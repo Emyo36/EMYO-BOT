@@ -19,8 +19,9 @@ Bot de scalping pour la **session de New York**, **3 trades maximum par jour**.
 8. **Momentum** : entrée à la clôture d'une bougie dans le sens du trade avec un RSI qui monte (achat) ou qui baisse (vente).
 9. **Volatilité** : le bot ne trade que si l'ATR vaut au moins 0,8 fois sa moyenne, ce qui écarte les marchés endormis.
 10. **Gestion** : stop sous l'order block (ou sous le bas de la zone Fibonacci si c'est un FVG), plus une marge de 0,1 ATR, risque de 1 % par trade.
-    - **TP1 à 1:1** : dès qu'il est touché, le stop est déplacé **sur le niveau du TP1** (+1R sécurisé).
-    - Le trade reste ouvert jusqu'au **TP final à 2R**, ou jusqu'au stop déplacé.
+    - **TP1 à 1R** : **50 % de la position est encaissée** et le stop du reste passe **au point d'entrée + 0,1R** (le trade ne peut plus perdre).
+    - Le reste court jusqu'au **TP final à 2,5R**, ou jusqu'au stop déplacé.
+    - Résultat par trade : **-1R** (stop initial), **+0,55R** (TP1 puis retour à l'entrée) ou **+1,75R** (TP1 puis TP final).
     - Les positions sont fermées à la fin de la session. Le bot s'arrête après **3 trades dans la journée, tous actifs confondus**.
 
 ## Actifs et unité de temps

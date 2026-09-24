@@ -50,9 +50,10 @@ input double InpVolMult          = 0.8;         // ATR minimum (x la moyenne)
 
 input group "Risque"
 input double InpRiskPercent      = 1.0;         // Risque par trade (% du solde)
-input double InpRiskReward       = 2.0;         // TP final (en R)
-input double InpTp1R             = 1.0;         // TP1 (en R) : déclenche le déplacement du stop
-input double InpLockR            = 1.0;         // Stop déplacé à (en R) une fois TP1 touché
+input double InpRiskReward       = 2.5;         // TP final (en R)
+input double InpTp1R             = 1.0;         // TP1 (en R)
+input double InpTp1ClosePct      = 50.0;        // Part de la position fermée au TP1 (%)
+input double InpLockR            = 0.1;         // Stop après TP1 (en R, 0 = point d'entrée)
 input double InpSlBufferAtr      = 0.1;         // Marge au-delà du stop (x ATR)
 input ulong  InpMagic            = 36036;       // Numéro magique
 
@@ -87,9 +88,9 @@ Setup    S;
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   if(InpLockR > InpTp1R || InpTp1R >= InpRiskReward)
+   if(InpLockR < 0 || InpLockR > InpTp1R || InpTp1R >= InpRiskReward || InpTp1ClosePct < 0 || InpTp1ClosePct > 100)
      {
-      Print("Il faut : stop déplacé (R) <= TP1 (R) < TP final (R).");
+      Print("Il faut : 0 <= stop après TP1 (R) <= TP1 (R) < TP final (R), et une part fermée entre 0 et 100 %.");
       return(INIT_PARAMETERS_INCORRECT);
      }
    if(InpFibTop >= InpFibBottom)
@@ -273,9 +274,28 @@ bool OpenTrade(const bool isLong, double sl)
   }
 
 //+------------------------------------------------------------------+
-//| TP1 touché : le stop passe au niveau verrouillé (InpLockR), le   |
-//| reste de la position reste ouvert jusqu'au TP final.             |
-//| Le risque initial est retrouvé à partir du TP : TP = entrée ± R*risque |
+//| Volume à fermer au TP1 (0 si la position est trop petite pour    |
+//| être coupée)                                                     |
+//+------------------------------------------------------------------+
+double PartialVolume(const double volume)
+  {
+   double step   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   if(step <= 0 || InpTp1ClosePct <= 0)
+      return(0.0);
+   double part = MathFloor(volume * InpTp1ClosePct / 100.0 / step) * step;
+   if(part < minLot || volume - part < minLot - step / 2)
+      return(0.0);
+   int digits = (int)MathMax(0, MathCeil(-MathLog10(step)));
+   return(NormalizeDouble(part, digits));
+  }
+
+//+------------------------------------------------------------------+
+//| TP1 touché : le stop du reste passe au point d'entrée (+ InpLockR) |
+//| puis InpTp1ClosePct % de la position est encaissé. Le reste vise |
+//| le TP final. Le risque initial est retrouvé à partir du TP :     |
+//| TP = entrée ± InpRiskReward * risque.                            |
+//| Une position déjà traitée a son stop du côté gagnant de l'entrée. |
 //+------------------------------------------------------------------+
 void ManagePositions()
   {
@@ -285,33 +305,44 @@ void ManagePositions()
       ulong ticket = PositionGetTicket(i);
       if(!IsOurPosition(ticket))
          continue;
-      double open = PositionGetDouble(POSITION_PRICE_OPEN);
-      double sl   = PositionGetDouble(POSITION_SL);
-      double tp   = PositionGetDouble(POSITION_TP);
+      double open   = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl     = PositionGetDouble(POSITION_SL);
+      double tp     = PositionGetDouble(POSITION_TP);
+      double volume = PositionGetDouble(POSITION_VOLUME);
       if(tp <= 0)
          continue;
       double risk = MathAbs(tp - open) / InpRiskReward;
       if(risk <= 0)
          continue;
 
+      double newSl;
       if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
         {
          double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         if(bid < open + InpTp1R * risk)
+         if(sl >= open || bid < open + InpTp1R * risk)
             continue;
-         double newSl = NormalizeDouble(MathMin(open + InpLockR * risk, bid - minDist), _Digits);
-         if(newSl > sl + _Point)
-            trade.PositionModify(ticket, newSl, tp);
+         newSl = NormalizeDouble(MathMin(open + InpLockR * risk, bid - minDist), _Digits);
+         if(newSl < open)
+            continue;   // prix trop proche pour placer le stop : on réessaie au tick suivant
         }
       else
         {
          double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-         if(ask > open - InpTp1R * risk)
+         if((sl > 0 && sl <= open) || ask > open - InpTp1R * risk)
             continue;
-         double newSl = NormalizeDouble(MathMax(open - InpLockR * risk, ask + minDist), _Digits);
-         if(sl <= 0 || newSl < sl - _Point)
-            trade.PositionModify(ticket, newSl, tp);
+         newSl = NormalizeDouble(MathMax(open - InpLockR * risk, ask + minDist), _Digits);
+         if(newSl > open)
+            continue;
         }
+
+      if(!trade.PositionModify(ticket, newSl, tp))
+        {
+         PrintFormat("Déplacement du stop impossible : %u %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
+         continue;
+        }
+      double part = PartialVolume(volume);
+      if(part > 0 && !trade.PositionClosePartial(ticket, part))
+         PrintFormat("Clôture partielle au TP1 impossible : %u %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
      }
   }
 
