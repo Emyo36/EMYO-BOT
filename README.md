@@ -137,3 +137,31 @@ réglages par défaut. Le lot est calculé automatiquement par `TargetProfitMone
 2. Compiler dans MetaEditor (F7).
 3. Tester d'abord dans le Strategy Tester (modèle « Chaque tick basé sur les ticks réels »),
    puis sur un compte **démo**.
+
+---
+
+# EMYO SMC (`EMYO_SMC.mq5`)
+
+Deuxième bot, séparé, qui reproduit la méthode d'une vidéo ICT / SMC : **on ne rentre
+jamais directement sur une zone, on attend une confirmation**. Il se teste à côté
+d'EMYO_BOT pour comparer (numéro magique différent : 360037).
+
+1. **Tendance de fond** : dernière clôture H1 **et** H4 du même côté de leur EMA 50.
+2. **Order block (M5)** : dernière bougie contraire avant une impulsion forte
+   (clôture au-delà du bloc d'au moins 1,5 ATR en 3 bougies). Le bloc est abandonné si
+   une bougie M5 clôture au travers.
+3. **Retour sur la zone** : en M1, le prix revient toucher le bloc sans clôturer au travers.
+4. **Confirmation M1** (`Confirmation`) :
+   - **CHoCH** (défaut, « la plus forte » selon la vidéo) : la bougie clôture au-delà du
+     dernier point haut (achat) / point bas (vente) qui a précédé l'extrême de la correction ;
+   - **bougie englobante** sur la zone ;
+   - ou l'une des deux.
+5. **Ordres** : SL sous le plus bas de la correction (achat) avec une petite marge ;
+   3 positions avec TP à **1R, 2R et 3R** (R = risque). Chaque position vise
+   `TargetProfitMoney`. Break-even à 1R. Un seul signal par order block.
+
+Mêmes protections qu'EMYO_BOT : session américaine, arrêt du jour à −3 %, filtre de
+spread (en % du risque), fermeture en fin de session, compteur sur le graphique.
+
+La vidéo annonce 75–80 % de réussite : c'est une affirmation marketing, seul le
+backtest dira ce que donnent ces règles automatisées.
