@@ -24,10 +24,18 @@ requireOB  = input.bool(true, "Exiger un order block dans la zone Fibo", group=g
 requireFVG = input.bool(false, "Exiger un FVG (imbalance) dans l'impulsion", group=grpSetup)
 rsiLen     = input.int(14, "RSI (momentum)", minval=1, group=grpSetup)
 
+grpVol     = "Volatilité"
+useVolFilt = input.bool(true, "Trader seulement si le marché est volatil", group=grpVol)
+atrLen     = input.int(14, "ATR", minval=1, group=grpVol)
+atrMaLen   = input.int(50, "Moyenne de l'ATR", minval=1, group=grpVol)
+volMult    = input.float(1.0, "ATR minimum (x la moyenne)", minval=0.1, step=0.1, group=grpVol)
+
 grpRisk    = "Risque"
 riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval=0.01, step=0.1, group=grpRisk)
-rr         = input.float(2.0, "Ratio risque/rendement", minval=0.1, step=0.1, group=grpRisk)
-slBufTicks = input.int(20, "Marge au-delà du stop (ticks)", minval=0, group=grpRisk)
+rr         = input.float(2.0, "TP final (en R)", minval=0.1, step=0.1, group=grpRisk)
+tp1R       = input.float(1.0, "TP1 (en R) : déclenche le déplacement du stop", minval=0.1, step=0.1, group=grpRisk)
+lockR      = input.float(1.0, "Stop déplacé à (en R) une fois TP1 touché", minval=0.0, step=0.1, group=grpRisk)
+slBufAtr   = input.float(0.1, "Marge au-delà du stop (x ATR)", minval=0.0, step=0.05, group=grpRisk)
 
 // ───────────────────────────── Tendance ─────────────────────────────
 // Dernière bougie UT supérieure clôturée : pas de repaint.
@@ -42,13 +50,15 @@ dayKey    = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz
 var int tradesToday = 0
 if dayKey != dayKey[1]
     tradesToday := 0
-canTrade = inSession and tradesToday < maxTrades and strategy.position_size == 0
+atr      = ta.atr(atrLen)
+volOk    = not useVolFilt or atr > ta.sma(atr, atrMaLen) * volMult
+canTrade = inSession and volOk and tradesToday < maxTrades and strategy.position_size == 0
 
 // ───────────────────────────── Momentum, swings, FVG ─────────────────────────────
 rsi   = ta.rsi(close, rsiLen)
 momUp = rsi > rsi[1] and close > open
 momDn = rsi < rsi[1] and close < open
-buf   = slBufTicks * syminfo.mintick
+buf   = slBufAtr * atr
 
 ph = ta.pivothigh(high, pivLen, pivLen)
 pl = ta.pivotlow(low, pivLen, pivLen)
@@ -173,6 +183,9 @@ if sState == 0 and inSession and bearTrend and not na(plRef) and not na(phRef) a
     sStart := bar_index
 
 // ───────────────────────────── Ordres ─────────────────────────────
+var float tradeRisk = na
+var float tradeTp   = na
+var bool  stopMoved = false
 if longSignal
     lSl   = math.min(requireOB ? lObBot : lSweep, low) - buf
     lDist = close - lSl
@@ -181,6 +194,9 @@ if longSignal
         lQty = strategy.equity * riskPct / 100 / (lDist * syminfo.pointvalue)
         strategy.entry("Long", strategy.long, qty=lQty)
         strategy.exit("Long Exit", "Long", stop=lSl, limit=lTp)
+        tradeRisk := lDist
+        tradeTp   := lTp
+        stopMoved := false
         tradesToday += 1
         alert('{"action":"buy","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(lSl, format.mintick) + ',"tp":' + str.tostring(lTp, format.mintick) + '}', alert.freq_once_per_bar_close)
     lState := 0
@@ -193,9 +209,20 @@ if shortSignal and not longSignal
         sQty = strategy.equity * riskPct / 100 / (sDist * syminfo.pointvalue)
         strategy.entry("Short", strategy.short, qty=sQty)
         strategy.exit("Short Exit", "Short", stop=sSl, limit=sTp)
+        tradeRisk := sDist
+        tradeTp   := sTp
+        stopMoved := false
         tradesToday += 1
         alert('{"action":"sell","symbol":"' + syminfo.ticker + '","sl":' + str.tostring(sSl, format.mintick) + ',"tp":' + str.tostring(sTp, format.mintick) + '}', alert.freq_once_per_bar_close)
     sState := 0
+
+// TP1 touché : le stop passe au niveau verrouillé, le reste de la position vise le TP final
+if strategy.position_size > 0 and not stopMoved and high >= strategy.position_avg_price + tp1R * tradeRisk
+    strategy.exit("Long Exit", "Long", stop=strategy.position_avg_price + lockR * tradeRisk, limit=tradeTp)
+    stopMoved := true
+if strategy.position_size < 0 and not stopMoved and low <= strategy.position_avg_price - tp1R * tradeRisk
+    strategy.exit("Short Exit", "Short", stop=strategy.position_avg_price - lockR * tradeRisk, limit=tradeTp)
+    stopMoved := true
 
 if closeAtEnd and not inSession and strategy.position_size != 0
     strategy.close_all(comment="Fin de session")

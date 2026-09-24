@@ -24,6 +24,7 @@ input int    InpSessEndHour      = 19;          // Fin session - heure
 input int    InpSessEndMin       = 0;           // Fin session - minute
 input bool   InpCloseAtSessionEnd = true;       // Fermer les positions à la fin de la session
 input int    InpMaxTradesPerDay  = 3;           // Trades max par jour
+input bool   InpCountAllSymbols  = true;        // Limite commune à tous les actifs (BTC, Gold, NAS, DJ)
 
 input group "Setup"
 input int    InpPivotLen         = 3;           // Longueur des swings (pivots)
@@ -34,10 +35,18 @@ input bool   InpRequireOB        = true;        // Exiger un order block dans la
 input bool   InpRequireFVG       = false;       // Exiger un FVG (imbalance) dans l'impulsion
 input int    InpRsiPeriod        = 14;          // RSI (momentum)
 
+input group "Volatilité"
+input bool   InpUseVolFilter     = true;        // Trader seulement si le marché est volatil
+input int    InpAtrPeriod        = 14;          // ATR
+input int    InpAtrMaPeriod      = 50;          // Moyenne de l'ATR
+input double InpVolMult          = 1.0;         // ATR minimum (x la moyenne)
+
 input group "Risque"
 input double InpRiskPercent      = 1.0;         // Risque par trade (% du solde)
-input double InpRiskReward       = 2.0;         // Ratio risque/rendement
-input int    InpSlBufferPoints   = 20;          // Marge au-delà du stop (points)
+input double InpRiskReward       = 2.0;         // TP final (en R)
+input double InpTp1R             = 1.0;         // TP1 (en R) : déclenche le déplacement du stop
+input double InpLockR            = 1.0;         // Stop déplacé à (en R) une fois TP1 touché
+input double InpSlBufferAtr      = 0.1;         // Marge au-delà du stop (x ATR)
 input ulong  InpMagic            = 36036;       // Numéro magique
 
 //--- États : 0 = rien, 1 = liquidité prise (attente cassure de structure),
@@ -59,6 +68,7 @@ CTrade   trade;
 int      hEmaFast = INVALID_HANDLE;
 int      hEmaSlow = INVALID_HANDLE;
 int      hRsi     = INVALID_HANDLE;
+int      hAtr     = INVALID_HANDLE;
 datetime lastBarTime = 0;
 double   lastPH = 0.0;   // 0 = aucun swing encore détecté
 double   lastPL = 0.0;
@@ -68,6 +78,11 @@ Setup    S;
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   if(InpLockR > InpTp1R || InpTp1R >= InpRiskReward)
+     {
+      Print("Il faut : stop déplacé (R) <= TP1 (R) < TP final (R).");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
    if(InpFibTop >= InpFibBottom)
      {
       Print("Le Fibo haut de zone doit être inférieur au Fibo bas de zone (ex. 0.618 < 0.786).");
@@ -76,7 +91,8 @@ int OnInit()
    hEmaFast = iMA(_Symbol, InpTrendTF, InpEmaFast, 0, MODE_EMA, PRICE_CLOSE);
    hEmaSlow = iMA(_Symbol, InpTrendTF, InpEmaSlow, 0, MODE_EMA, PRICE_CLOSE);
    hRsi     = iRSI(_Symbol, _Period, InpRsiPeriod, PRICE_CLOSE);
-   if(hEmaFast == INVALID_HANDLE || hEmaSlow == INVALID_HANDLE || hRsi == INVALID_HANDLE)
+   hAtr     = iATR(_Symbol, _Period, InpAtrPeriod);
+   if(hEmaFast == INVALID_HANDLE || hEmaSlow == INVALID_HANDLE || hRsi == INVALID_HANDLE || hAtr == INVALID_HANDLE)
      {
       Print("Impossible de créer les indicateurs.");
       return(INIT_FAILED);
@@ -94,6 +110,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(hEmaFast);
    IndicatorRelease(hEmaSlow);
    IndicatorRelease(hRsi);
+   IndicatorRelease(hAtr);
    Comment("");
   }
 
@@ -165,7 +182,7 @@ int TradesToday()
       ulong deal = HistoryDealGetTicket(i);
       if(deal == 0)
          continue;
-      if(HistoryDealGetString(deal, DEAL_SYMBOL) != _Symbol)
+      if(!InpCountAllSymbols && HistoryDealGetString(deal, DEAL_SYMBOL) != _Symbol)
          continue;
       if((ulong)HistoryDealGetInteger(deal, DEAL_MAGIC) != InpMagic)
          continue;
@@ -247,8 +264,52 @@ bool OpenTrade(const bool isLong, double sl)
   }
 
 //+------------------------------------------------------------------+
+//| TP1 touché : le stop passe au niveau verrouillé (InpLockR), le   |
+//| reste de la position reste ouvert jusqu'au TP final.             |
+//| Le risque initial est retrouvé à partir du TP : TP = entrée ± R*risque |
+//+------------------------------------------------------------------+
+void ManagePositions()
+  {
+   double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(!IsOurPosition(ticket))
+         continue;
+      double open = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl   = PositionGetDouble(POSITION_SL);
+      double tp   = PositionGetDouble(POSITION_TP);
+      if(tp <= 0)
+         continue;
+      double risk = MathAbs(tp - open) / InpRiskReward;
+      if(risk <= 0)
+         continue;
+
+      if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
+        {
+         double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         if(bid < open + InpTp1R * risk)
+            continue;
+         double newSl = NormalizeDouble(MathMin(open + InpLockR * risk, bid - minDist), _Digits);
+         if(newSl > sl + _Point)
+            trade.PositionModify(ticket, newSl, tp);
+        }
+      else
+        {
+         double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         if(ask > open - InpTp1R * risk)
+            continue;
+         double newSl = NormalizeDouble(MathMax(open - InpLockR * risk, ask + minDist), _Digits);
+         if(sl <= 0 || newSl < sl - _Point)
+            trade.PositionModify(ticket, newSl, tp);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
 void OnTick()
   {
+   ManagePositions();
    if(InpCloseAtSessionEnd && !InSession(TimeCurrent()) && HasPosition())
       CloseAll();
 
@@ -289,9 +350,22 @@ void OnNewBar()
    bool momUp = rsiOk && r1 > r2 && c > o;
    bool momDn = rsiOk && r1 < r2 && c < o;
 
+   //--- Volatilité : ATR au-dessus de sa moyenne
+   double atrs[];
+   bool   atrOk = (CopyBuffer(hAtr, 0, 1, InpAtrMaPeriod, atrs) == InpAtrMaPeriod);
+   double atr   = atrOk ? atrs[InpAtrMaPeriod - 1] : 0.0;   // série non inversée : dernier élément = shift 1
+   double atrMa = 0.0;
+   if(atrOk)
+     {
+      for(int k = 0; k < InpAtrMaPeriod; k++)
+         atrMa += atrs[k];
+      atrMa /= InpAtrMaPeriod;
+     }
+   bool volOk = atrOk && (!InpUseVolFilter || atr > atrMa * InpVolMult);
+
    int  tradesToday = TradesToday();
-   bool canTrade    = inSess && tradesToday < InpMaxTradesPerDay && !HasPosition();
-   double buf       = InpSlBufferPoints * _Point;
+   bool canTrade    = inSess && volOk && tradesToday < InpMaxTradesPerDay && !HasPosition();
+   double buf       = InpSlBufferAtr * atr;
 
    //--- Swings connus avant cette bougie
    double phRef = lastPH;
