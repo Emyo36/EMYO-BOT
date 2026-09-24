@@ -125,3 +125,21 @@ Qualité d'historique **22 % de ticks réels** seulement (résultats moins fiabl
 
 Hypothèses à tester (sans sur-optimiser) : break-even plus large ou désactivé, éviter la
 première heure après l'ouverture, TP ~2,2 ATR (zone vue en optimisation).
+
+### 2026-09-24 — Test hors échantillon XAUUSD-STD M1, 01/03 → 01/07/2026
+
+Réglages : agressif, momentum, TP 2,2 / SL 1,5, break-even 1,5, début 10h30 New York.
+Qualité d'historique **0 % de ticks réels** (ticks générés : peu fiable pour du M1).
+
+- **−474 $** (−47 %), facteur de profit **0,69**, 1 076 trades, **41,5 % gagnants**.
+- Sorties : 243 TP (+993 $), 196 break-even (+30 $), **601 pertes (−1 470 $)**.
+- Élargir le break-even n'a pas aidé : le taux de réussite chute, les pertes dominent.
+- Aucun trade en juin : avec TP 2,2 ATR, la volatilité de juin rend le gain au lot minimum
+  > `MaxProfitAtMinLot` (5 $) → trades ignorés (effet de bord à connaître).
+- Mars −72 $, avril −325 $, mai −77 $ ; toutes les heures négatives.
+
+**Conclusion** : 3 tests, 2 périodes, plusieurs réglages → toujours perdant. Les passes
+positives de l'optimisation de juillet-août étaient de la sur-optimisation. Le signal
+d'entrée (momentum M1 dans la tendance) n'a pas d'avantage sur l'or chez ce courtier.
+Arrêter d'ajuster les paramètres ; changer l'idée de base (proposé à l'utilisateur :
+retour à la moyenne sur M1, tendance sur M5/M15, ou stratégie de la vidéo).
