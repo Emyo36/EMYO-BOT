@@ -167,3 +167,11 @@ Prochain test proposé : `TargetProfitMoney = 0`, `RiskPercent = 0`, `Lots = 0.0
 (lot fixe) pour que chaque signal ouvre ses 3 positions et avoir un vrai échantillon.
 Conflit à expliquer : l'objectif « 2 $ par trade » est incompatible avec le lot minimum
 de l'or quand le stop est placé sur la structure.
+
+### 2026-09-25 — Test SMC renvoyé : identique au précédent
+
+Le rapport montrait encore `TargetProfitMoney=2.0` : la modification dans l'onglet
+« Placement » n'a pas été prise en compte (mêmes chiffres exactement). EMYO SMC passe en
+v1.01 avec **`TargetProfitMoney = 0` par défaut** (lot fixe 0,01) pour éviter la
+manipulation. Rappel : le testeur garde les dernières valeurs utilisées → vérifier la
+section « Données d'entrée » du rapport.

@@ -4,7 +4,7 @@
 //|  bougie englobante). Or, Bitcoin, NASDAQ - session américaine.    |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -24,7 +24,7 @@ enum ENUM_SESSION_MODE
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
 input group "Taille des positions"
-input double TargetProfitMoney  = 2;     // Gain visé par position au TP, devise du compte (0 = off)
+input double TargetProfitMoney  = 0;     // Gain visé par position au TP, devise du compte (0 = off)
 input double MaxProfitAtMinLot  = 10;    // Si le lot minimum dépasse l'objectif : accepté jusqu'à ce gain
 input double RiskPercent        = 0;     // % du solde risqué par position (si TargetProfitMoney = 0)
 input double Lots               = 0.01;  // Lot fixe (si TargetProfitMoney = 0 et RiskPercent = 0)
