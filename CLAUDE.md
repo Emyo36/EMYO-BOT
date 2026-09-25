@@ -254,3 +254,24 @@ Tests proposés, un changement à la fois :
 3. `UseBiasTimeframe2 = false` (H1 seulement) : plus de signaux.
 4. `RiskPercent = 0.5` au lieu du lot fixe : risque égal par position (lisse la courbe).
 Augmenter le lot augmente gains ET pertes : ce n'est pas une amélioration de stratégie.
+
+### 2026-09-25 — Analyse en R des tests longs SMC (question : gros lot + stop serré ?)
+
+Calcul du résultat de chaque position en multiples de son risque (R), à partir des ordres
+(SL initial) et des transactions des deux rapports longs (recalcul cohérent : or +167 $,
+BTC +38 $ au lot fixe).
+
+- **En R, la stratégie est négative** : or −0,068 R/position (somme −35 R), BTC −0,007 R.
+  Le gain au lot fixe vient uniquement des positions à **SL large** (plus de $ en jeu).
+- Par tiers de taille de SL (même résultat sur les deux marchés) :
+  | | SL courts | SL moyens | SL larges |
+  |---|---|---|---|
+  | Or | −113 $ (−0,26 R) | −2 $ | **+282 $** |
+  | BTC | −41 $ (−0,17 R) | −15 $ | **+94 $** |
+- Conséquence : « gros lot + stop serré » = exactement ce qui perd. Un risque fixe en $ par
+  signal (15 ou 30 $) rendrait le bot **perdant** (or −177 $ / −353 $ simulés).
+- Cause probable : spread + bruit M1 déclenchent les SL serrés.
+
+Piste cohérente sur les 2 marchés (mais tirée des mêmes données → à valider sur 2024) :
+écarter les setups à SL serré via `MinRiskAtr` (0,5 → 1,5) ou `MaxSpreadPercentOfRisk`
+(15 → 7). Ne pas passer à un risque fixe en $ tant que le résultat en R est négatif.
