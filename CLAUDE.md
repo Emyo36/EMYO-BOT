@@ -47,7 +47,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
-## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.00)
+## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.01, compilé OK)
 
 Créé le 2026-09-24 à partir d'une vidéo ICT/SMC envoyée par l'utilisateur (transcription) :
 tendance H1+H4 (EMA 50), order block M5 (dernière bougie contraire avant impulsion ≥ 1,5 ATR),
@@ -175,3 +175,21 @@ Le rapport montrait encore `TargetProfitMoney=2.0` : la modification dans l'ongl
 v1.01 avec **`TargetProfitMoney = 0` par défaut** (lot fixe 0,01) pour éviter la
 manipulation. Rappel : le testeur garde les dernières valeurs utilisées → vérifier la
 section « Données d'entrée » du rapport.
+
+### 2026-09-25 — EMYO SMC v1.01, lot fixe 0,01, XAUUSD-STD M1, 01/03 → 01/09/2026
+
+Réglages par défaut (CHoCH, 3 positions 1R/2R/3R). Qualité d'historique 32 % ticks réels.
+
+- **−38 $** (−4 %), facteur de profit **0,96** (proche de l'équilibre), 180 positions =
+  **60 signaux**, 40 % gagnantes. Gain moyen **11,32 $** / perte moyenne 7,90 $ (1,43 : 1).
+- Drawdown max **26 %** (−336 $), série de 15 pertes (−202 $) : le risque par signal varie
+  beaucoup avec un lot fixe (SL sur la structure, jusqu'à −27 $ par position).
+- Mois : mars +156, avril −105, mai +49, juin +66, juillet −101, août −103.
+- Ventes +67 $, achats −106 $. Heures serveur 16h–20h (≈ 9h–14h NY) négatives,
+  21h–23h (≈ 14h–16h NY) positives, sorties en fin de session +111 $.
+
+Conclusion : bien meilleur qu'EMYO_BOT (−4 % contre −47 %, vrais gains > pertes), mais
+**pas rentable** et 60 signaux = encore peu. Filtres tentants (après-midi seulement,
+ventes seulement) = risque de sur-optimisation → à valider sur d'autres marchés/périodes
+avant de les adopter. Idée de gestion : `RiskPercent` plutôt que lot fixe pour stabiliser
+le risque par signal.
