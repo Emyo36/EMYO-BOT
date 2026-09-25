@@ -67,9 +67,9 @@ Magic 360037. **Jamais compilé** au moment de sa création. EMYO_BOT reste inch
 
 1. ~~Compilation~~ : faite, 0 erreur.
 2. Backtest M1 « ticks réels » sur chaque marché, 1 à 2 mois ; puis sur une autre période.
-3. Démo 1 à 3 mois, puis petit compte réel seulement si tout est positif.
-4. Idée en attente : l'utilisateur veut envoyer une stratégie vue en vidéo
-   (captures + transcription) pour la reproduire et la comparer.
+3. **Démo EMYO SMC** 1 à 2 mois (or + Bitcoin, lot fixe 0,01) — proposée le 2026-09-25.
+   Petit compte réel seulement si la démo confirme les backtests.
+4. ~~Stratégie de la vidéo~~ : faite (EMYO SMC).
 
 ## Journal des résultats
 
@@ -223,3 +223,20 @@ Réglages par défaut. Qualité d'historique 21 % ticks réels. Test long (20 mo
   font mieux ; 3e confirmation, mais ne pas filtrer avant le test Bitcoin long).
 
 En attente : même test long sur BTCUSD.
+
+### 2026-09-25 — EMYO SMC v1.01, lot fixe 0,01, BTCUSD M1, **01/01/2025 → 01/09/2026**
+
+Réglages par défaut. Qualité d'historique 45 % ticks réels.
+
+- **+38 $** (+4 %), facteur de profit **1,04**, 537 positions = **179 signaux**,
+  49 % gagnantes. Gain moyen 3,43 $ / perte moyenne 3,10 $.
+- Drawdown max **18 %** (−199 $), série de 36 positions perdantes (−133 $).
+- 11 mois positifs sur 20 ; 2025 +11 $, 2026 +27 $.
+- Achats +24 $, ventes +14 $ → l'avantage des ventes vu sur l'or **n'est pas confirmé**
+  sur le Bitcoin : ne pas filtrer par sens.
+
+**Bilan EMYO SMC sur 20 mois** : légèrement positif sur les deux marchés (FP 1,10 or,
+1,04 Bitcoin), mais gain faible face au drawdown (16 % de gain pour 22 % de baisse sur l'or,
+4 % pour 18 % sur le Bitcoin). Avantage possible mais mince, pas démontré au point de
+risquer de l'argent réel. Meilleur candidat à ce jour. Étape suivante proposée :
+**compte démo** 1 à 2 mois sur or + Bitcoin, lot fixe 0,01, sans rien changer.
