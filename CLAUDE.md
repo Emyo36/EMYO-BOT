@@ -26,7 +26,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 | Décision | Raison |
 |---|---|
 | Unité de temps **M1** | Demande de l'utilisateur : scalping 1 minute |
-| Marchés : **or (XAUUSD), Bitcoin (BTCUSD), NASDAQ (NAS100)** | Ce que l'utilisateur trade |
+| Marchés : **or (XAUUSD-STD) et Bitcoin (BTCUSD)** | Ce que l'utilisateur trade ; NASDAQ abandonné le 2026-09-25 à sa demande |
 | Toutes les distances en **ATR** (mode pips gardé pour le forex) | Les pips n'ont pas de sens sur ces marchés |
 | **Suivi de tendance** : EMA 20 / EMA 50 M1 (+ M15 en mode normal) | « Prendre le train » de la tendance |
 | Entrées **momentum** (+ replis en mode agressif) | Demande : « beaucoup plus sur le momentum » |
@@ -207,4 +207,4 @@ Réglages par défaut. Qualité d'historique **100 % ticks réels** (le test le 
   confirmé, ne pas l'ajouter.
 
 Bilan SMC après 2 marchés : proche de l'équilibre mais légèrement perdant partout.
-Pas d'avantage démontré. En attente du NASDAQ.
+Pas d'avantage démontré. NASDAQ abandonné (demande de l'utilisateur) : on continue sur or + Bitcoin.
