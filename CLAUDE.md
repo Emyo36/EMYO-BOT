@@ -208,3 +208,18 @@ Réglages par défaut. Qualité d'historique **100 % ticks réels** (le test le 
 
 Bilan SMC après 2 marchés : proche de l'équilibre mais légèrement perdant partout.
 Pas d'avantage démontré. NASDAQ abandonné (demande de l'utilisateur) : on continue sur or + Bitcoin.
+
+### 2026-09-25 — EMYO SMC v1.01, lot fixe 0,01, XAUUSD-STD M1, **01/01/2025 → 01/09/2026**
+
+Réglages par défaut. Qualité d'historique 21 % ticks réels. Test long (20 mois).
+
+- **+164 $** (+16 %), facteur de profit **1,10** — premier résultat positif sur longue période.
+- 519 positions = **173 signaux**, 46 % gagnantes. Gain moyen 7,39 $ / perte moyenne 5,63 $.
+- Drawdown max **22 %** (−338 $) : supérieur au gain total → rapport gain/risque faible.
+- **Fragile** : plus gros gain unique +102 $ ; janvier 2026 seul = +208 $. Sans ces
+  quelques gros coups, résultat proche de 0. 11 mois positifs sur 20.
+- 2025 : +43 $ ; 2026 (jan–août) : +124 $.
+- Ventes **+204 $**, achats −38 $ (même tendance que sur les autres tests : les ventes
+  font mieux ; 3e confirmation, mais ne pas filtrer avant le test Bitcoin long).
+
+En attente : même test long sur BTCUSD.
