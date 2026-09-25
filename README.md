@@ -160,6 +160,11 @@ d'EMYO_BOT pour comparer (numéro magique différent : 360037).
    3 positions avec TP à **1R, 2R et 3R** (R = risque). Chaque position vise
    `TargetProfitMoney`. Break-even à 1R. Un seul signal par order block.
 
+Option **runner** (`UseRunner`, désactivée par défaut) : la 3e position n'a pas de TP ;
+une fois au break-even, son SL suit le prix à `RunnerTrailAtr` × ATR M5 et elle se ferme au
+SL ou en fin de session. Idée tirée des backtests : les positions encore ouvertes en fin de
+session sont gagnantes en moyenne sur l'or et le Bitcoin.
+
 Mêmes protections qu'EMYO_BOT : session américaine, arrêt du jour à −3 %, filtre de
 spread (en % du risque), fermeture en fin de session, compteur sur le graphique.
 

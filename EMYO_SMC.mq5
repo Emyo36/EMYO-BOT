@@ -4,7 +4,7 @@
 //|  bougie englobante). Or, Bitcoin, NASDAQ - session américaine.    |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
 
@@ -38,6 +38,8 @@ input int    MaxOpenPositions   = 6;     // Positions ouvertes en même temps au
 input bool   AddOnlyWhenProtected = true; // Nouveau signal seulement si les positions ouvertes sont au break-even
 input double BreakEvenRR        = 1.0;   // Passage au break-even quand le gain atteint ce multiple du risque (0 = off)
 input double BreakEvenLockRR    = 0.1;   // Gain sécurisé au break-even (en multiple du risque)
+input bool   UseRunner          = false; // Dernière position sans TP : elle suit le mouvement (trailing)
+input double RunnerTrailAtr     = 2.0;   // Distance du trailing du runner (en ATR de l'unité de temps des blocs)
 
 input group "Tendance de fond"
 input ENUM_TIMEFRAMES BiasTimeframe1 = PERIOD_H1;  // 1re unité de temps de tendance
@@ -108,7 +110,7 @@ datetime   usedBlocks[];  // blocs déjà tradés : un seul signal par bloc
 int OnInit()
 {
    if(TradesPerSignal < 1 || FirstTargetRR <= 0 || TargetStepRR < 0 || MaxOpenPositions < 1 ||
-      BreakEvenRR < 0 || BreakEvenLockRR < 0 || BiasEmaPeriod <= 0 ||
+      BreakEvenRR < 0 || BreakEvenLockRR < 0 || RunnerTrailAtr <= 0 || BiasEmaPeriod <= 0 ||
       ObLookback < 10 || ImpulseBars < 1 || ImpulseAtr <= 0 || MaxBlocksPerSide < 1 ||
       ConfirmLookback < 5 || PivotStrength < 1 || ChochMaxBars < 2 ||
       EngulfBodyAtr < 0 || SlBufferAtr < 0 || MinRiskAtr < 0 || MaxRiskAtr <= MinRiskAtr ||
@@ -724,8 +726,11 @@ int OpenBasket(int dir, double stopPrice, int count)
       if(lots <= 0)
          continue;
 
-      double tp = NormalizeDouble((dir == 1) ? price + tpDistance : price - tpDistance, _Digits);
-      string info = " | TP " + DoubleToString(rr, 1) + "R | Lots=" + DoubleToString(lots, 2) +
+      // Runner : la dernière position du panier n'a pas de TP
+      bool runner = UseRunner && count > 1 && k == count - 1;
+      double tp = runner ? 0 : NormalizeDouble((dir == 1) ? price + tpDistance : price - tpDistance, _Digits);
+      string info = (runner ? " | RUNNER sans TP" : " | TP " + DoubleToString(rr, 1) + "R") +
+                    " | Lots=" + DoubleToString(lots, 2) +
                     " | Gain visé=" + DoubleToString(MoneyPerLot(tpDistance) * lots, 2) + " " + currency +
                     " Perte max=" + DoubleToString(MoneyPerLot(risk) * lots, 2) + " " + currency;
 
@@ -743,15 +748,18 @@ int OpenBasket(int dir, double stopPrice, int count)
 }
 
 // Break-even : quand le gain atteint BreakEvenRR fois le risque initial,
-// le SL passe au prix d'entrée + BreakEvenLockRR fois le risque
+// le SL passe au prix d'entrée + BreakEvenLockRR fois le risque.
+// Runner (position sans TP) : une fois protégé, son SL suit le prix à
+// RunnerTrailAtr x ATR ; il se ferme au SL ou en fin de session.
 void ManagePositions()
 {
-   if(BreakEvenRR <= 0)
+   if(BreakEvenRR <= 0 && !UseRunner)
       return;
 
    double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
    double bid     = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask     = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double trail   = UseRunner ? RunnerTrailAtr * LastValue(atrSetupHandle) : 0;
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -762,28 +770,45 @@ void ManagePositions()
       double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
       double sl        = PositionGetDouble(POSITION_SL);
       double tp        = PositionGetDouble(POSITION_TP);
+      bool   isRunner  = UseRunner && tp == 0;
 
       if(PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY)
       {
-         if(sl <= 0 || sl >= openPrice)
-            continue;                      // déjà protégée
-         double risk = openPrice - sl;
-         if(bid - openPrice >= BreakEvenRR * risk)
+         if(sl > 0 && sl < openPrice)
          {
-            double newSL = NormalizeDouble(openPrice + BreakEvenLockRR * risk, _Digits);
-            if(bid - newSL >= minDist)
+            // Pas encore protégée : break-even
+            double risk = openPrice - sl;
+            if(BreakEvenRR > 0 && bid - openPrice >= BreakEvenRR * risk)
+            {
+               double newSL = NormalizeDouble(openPrice + BreakEvenLockRR * risk, _Digits);
+               if(bid - newSL >= minDist)
+                  trade.PositionModify(ticket, newSL, tp);
+            }
+         }
+         else if(isRunner && trail > 0 && sl > 0)
+         {
+            // Protégée : le SL du runner suit le prix vers le haut
+            double newSL = NormalizeDouble(bid - trail, _Digits);
+            if(newSL > sl + 0.1 * trail && bid - newSL >= minDist)
                trade.PositionModify(ticket, newSL, tp);
          }
       }
       else
       {
-         if(sl <= 0 || sl <= openPrice)
-            continue;
-         double risk = sl - openPrice;
-         if(openPrice - ask >= BreakEvenRR * risk)
+         if(sl > 0 && sl > openPrice)
          {
-            double newSL = NormalizeDouble(openPrice - BreakEvenLockRR * risk, _Digits);
-            if(newSL - ask >= minDist)
+            double risk = sl - openPrice;
+            if(BreakEvenRR > 0 && openPrice - ask >= BreakEvenRR * risk)
+            {
+               double newSL = NormalizeDouble(openPrice - BreakEvenLockRR * risk, _Digits);
+               if(newSL - ask >= minDist)
+                  trade.PositionModify(ticket, newSL, tp);
+            }
+         }
+         else if(isRunner && trail > 0 && sl > 0)
+         {
+            double newSL = NormalizeDouble(ask + trail, _Digits);
+            if(newSL < sl - 0.1 * trail && newSL - ask >= minDist)
                trade.PositionModify(ticket, newSL, tp);
          }
       }

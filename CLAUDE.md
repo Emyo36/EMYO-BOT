@@ -47,7 +47,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
-## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.01, compilé OK)
+## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.02 ; v1.01 compilé OK)
 
 Créé le 2026-09-24 à partir d'une vidéo ICT/SMC envoyée par l'utilisateur (transcription) :
 tendance H1+H4 (EMA 50), order block M5 (dernière bougie contraire avant impulsion ≥ 1,5 ATR),
@@ -240,3 +240,17 @@ Réglages par défaut. Qualité d'historique 45 % ticks réels.
 4 % pour 18 % sur le Bitcoin). Avantage possible mais mince, pas démontré au point de
 risquer de l'argent réel. Meilleur candidat à ce jour. Étape suivante proposée :
 **compte démo** 1 à 2 mois sur or + Bitcoin, lot fixe 0,01, sans rien changer.
+
+### 2026-09-25 — Pistes d'amélioration EMYO SMC (demande : « augmenter les gains »)
+
+Règle fixée avec l'utilisateur : une modification n'est gardée que si elle améliore
+**l'or ET le Bitcoin** sur le test long 01/01/2025 → 01/09/2026 (sinon = sur-optimisation).
+Répartition des sorties (tests longs) : TP or +11,81 $/pos., BTC +5,43 ; **fermetures en fin
+de session positives** (or +3,74 $/pos. ×73, BTC +1,68 ×48) → les bons trades vont plus loin.
+
+Tests proposés, un changement à la fois :
+1. `UseRunner = true` (ajouté en v1.02) : 3e position sans TP, trailing 2 ATR M5 après BE.
+2. `Confirmation = L'une ou l'autre` (CHoCH ou englobante) : plus de signaux.
+3. `UseBiasTimeframe2 = false` (H1 seulement) : plus de signaux.
+4. `RiskPercent = 0.5` au lieu du lot fixe : risque égal par position (lisse la courbe).
+Augmenter le lot augmente gains ET pertes : ce n'est pas une amélioration de stratégie.
