@@ -4,7 +4,7 @@
 //|  bougie englobante). Or, Bitcoin, NASDAQ - session américaine.    |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.02"
+#property version   "1.03"
 
 #include <Trade\Trade.mqh>
 
@@ -23,6 +23,10 @@ enum ENUM_SESSION_MODE
 };
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
+input group "Mode"
+input bool   AlertsOnly         = false; // Ne pas trader : envoyer seulement les signaux (entrée, SL, TP)
+input bool   SendPushAlerts     = true;  // Envoyer chaque signal sur le téléphone (MetaQuotes ID)
+
 input group "Taille des positions"
 input double TargetProfitMoney  = 0;     // Gain visé par position au TP, devise du compte (0 = off)
 input double MaxProfitAtMinLot  = 10;    // Si le lot minimum dépasse l'objectif : accepté jusqu'à ce gain
@@ -689,6 +693,39 @@ bool CheckConfirmation(const OrderBlock &ob, const datetime &time[], const doubl
    return false;
 }
 
+//+----------------------- ALERTES ----------------------------------+
+// Message du signal : entrée, SL et TP de chaque position.
+// Envoyé sur le téléphone (application MetaTrader 5) et affiché sur le PC.
+void SendSignalAlert(int dir, double entry, double stopPrice, int count, const OrderBlock &ob)
+{
+   double risk = (dir == 1) ? entry - stopPrice : stopPrice - entry;
+
+   string msg = "EMYO SMC " + _Symbol + " : " + (dir == 1 ? "ACHAT" : "VENTE") +
+                " vers " + DoubleToString(entry, _Digits) +
+                " | SL " + DoubleToString(stopPrice, _Digits);
+
+   for(int k = 0; k < count; k++)
+   {
+      double rr = FirstTargetRR + k * TargetStepRR;
+      bool runner = UseRunner && count > 1 && k == count - 1;
+      if(runner)
+         msg += " | TP" + IntegerToString(k + 1) + " libre (trailing)";
+      else
+         msg += " | TP" + IntegerToString(k + 1) + " " +
+                DoubleToString((dir == 1) ? entry + rr * risk : entry - rr * risk, _Digits);
+   }
+
+   msg += " | zone " + DoubleToString(ob.bottom, _Digits) + "-" + DoubleToString(ob.top, _Digits);
+
+   Print(msg);
+   if(MQLInfoInteger(MQL_TESTER))
+      return;                              // pas d'alertes pendant les backtests
+
+   Alert(msg);
+   if(SendPushAlerts && !SendNotification(msg))
+      Print("Notification non envoyée : vérifier le MetaQuotes ID (Outils > Options > Notifications)");
+}
+
 //+----------------------- ORDRES -----------------------------------+
 // Ouvre TradesPerSignal positions avec le même SL et des TP à 1R, 2R, 3R...
 // Renvoie le nombre de positions ouvertes.
@@ -830,7 +867,7 @@ void UpdatePanel()
    int bias      = GetBias();
    string currency = AccountInfoString(ACCOUNT_CURRENCY);
 
-   Comment("EMYO SMC  |  ", _Symbol, "\n",
+   Comment("EMYO SMC  |  ", _Symbol, (AlertsOnly ? "  |  MODE ALERTES (ne trade pas)" : ""), "\n",
            "Session : ", (IsTradingHour() ? "OUVERTE" : "fermée"),
            "  (New York ", TimeToString(NewYorkTime(), TIME_MINUTES), ")\n",
            "Tendance de fond : ", (bias == 1 ? "HAUSSIÈRE" : (bias == -1 ? "BAISSIÈRE" : "aucune")),
@@ -946,7 +983,10 @@ void OnTick()
             " [", DoubleToString(blocks[b].bottom, _Digits), " - ", DoubleToString(blocks[b].top, _Digits), "]");
 
       MarkBlockUsed(blocks[b].time);   // un seul signal par bloc, même si l'ordre échoue
-      OpenBasket(bias, stopPrice, count);
+      SendSignalAlert(bias, entry, stopPrice, count, blocks[b]);
+
+      if(!AlertsOnly)
+         OpenBasket(bias, stopPrice, count);
       break;
    }
 }

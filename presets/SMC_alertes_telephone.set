@@ -1,5 +1,5 @@
-; EMYO SMC - test : 3e position runner sans TP
-AlertsOnly=false
+; EMYO SMC - ne trade pas : envoie les signaux sur le telephone
+AlertsOnly=true
 SendPushAlerts=true
 TargetProfitMoney=0
 MaxProfitAtMinLot=10
@@ -13,7 +13,7 @@ MaxOpenPositions=6
 AddOnlyWhenProtected=true
 BreakEvenRR=1.0
 BreakEvenLockRR=0.1
-UseRunner=true
+UseRunner=false
 RunnerTrailAtr=2.0
 BiasTimeframe1=16385
 BiasTimeframe2=16388

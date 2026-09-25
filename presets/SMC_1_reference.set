@@ -1,4 +1,6 @@
 ; EMYO SMC - reglages par defaut (reference)
+AlertsOnly=false
+SendPushAlerts=true
 TargetProfitMoney=0
 MaxProfitAtMinLot=10
 RiskPercent=0

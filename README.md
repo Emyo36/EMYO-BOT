@@ -165,6 +165,12 @@ une fois au break-even, son SL suit le prix à `RunnerTrailAtr` × ATR M5 et ell
 SL ou en fin de session. Idée tirée des backtests : les positions encore ouvertes en fin de
 session sont gagnantes en moyenne sur l'or et le Bitcoin.
 
+**Mode alertes** (`AlertsOnly = true`, fichier `presets/SMC_alertes_telephone.set`) : le bot
+ne trade pas ; à chaque signal il envoie sur le téléphone (application MetaTrader 5) le sens,
+le prix d'entrée, le SL, les 3 TP et la zone. Réglage une fois pour toutes : sur le téléphone,
+MT5 → Paramètres → Chat et messages → copier le **MetaQuotes ID** ; sur le PC, Outils →
+Options → Notifications → cocher « Activer les notifications push » et coller l'ID.
+
 Mêmes protections qu'EMYO_BOT : session américaine, arrêt du jour à −3 %, filtre de
 spread (en % du risque), fermeture en fin de session, compteur sur le graphique.
 

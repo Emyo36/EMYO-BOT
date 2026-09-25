@@ -1,4 +1,6 @@
 ; EMYO SMC - test : risque minimum 1.5 ATR (ecarte les stops trop serres)
+AlertsOnly=false
+SendPushAlerts=true
 TargetProfitMoney=0
 MaxProfitAtMinLot=10
 RiskPercent=0

@@ -47,13 +47,16 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
-## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.02 ; v1.01 compilé OK)
+## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.03 ; v1.01 compilé OK)
 
 Créé le 2026-09-24 à partir d'une vidéo ICT/SMC envoyée par l'utilisateur (transcription) :
 tendance H1+H4 (EMA 50), order block M5 (dernière bougie contraire avant impulsion ≥ 1,5 ATR),
 retour sur la zone, **confirmation M1** (CHoCH par défaut, ou bougie englobante), SL sous
 l'extrême de la correction, 3 positions TP 1R/2R/3R, break-even à 1R, un signal par bloc.
-Magic 360037. **Jamais compilé** au moment de sa création. EMYO_BOT reste inchangé pour comparer.
+Magic 360037. v1.02 : option runner. v1.03 : **mode alertes** (`AlertsOnly`) qui envoie
+entrée/SL/TP sur le téléphone (SendNotification) sans trader — réponse à la demande de
+l'utilisateur de recevoir « les points d'entrée » chaque jour (Claude n'a pas accès aux prix
+en direct ni à son MT5). EMYO_BOT reste inchangé pour comparer.
 
 ## Points de vigilance connus
 
