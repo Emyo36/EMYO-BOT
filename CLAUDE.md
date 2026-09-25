@@ -67,9 +67,13 @@ Magic 360037. **Jamais compilé** au moment de sa création. EMYO_BOT reste inch
 
 1. ~~Compilation~~ : faite, 0 erreur.
 2. Backtest M1 « ticks réels » sur chaque marché, 1 à 2 mois ; puis sur une autre période.
-3. **Démo EMYO SMC** 1 à 2 mois (or + Bitcoin, lot fixe 0,01) — proposée le 2026-09-25.
+3. **Validation 2024 (en cours)** avec les fichiers `presets/*.set` (à charger dans l'onglet
+   Placement du testeur : clic droit → Charger) : `SMC_1_reference` puis
+   `SMC_2_risque_min_1.5`, sur XAUUSD-STD et BTCUSD, 01/01/2024 → 01/01/2025. On garde le
+   filtre seulement s'il améliore les deux marchés. `SMC_3_runner` ensuite.
+4. **Démo EMYO SMC** 1 à 2 mois (or + Bitcoin, lot fixe 0,01) après la validation.
    Petit compte réel seulement si la démo confirme les backtests.
-4. ~~Stratégie de la vidéo~~ : faite (EMYO SMC).
+5. ~~Stratégie de la vidéo~~ : faite (EMYO SMC).
 
 ## Journal des résultats
 
