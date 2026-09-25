@@ -193,3 +193,18 @@ Conclusion : bien meilleur qu'EMYO_BOT (−4 % contre −47 %, vrais gains > per
 ventes seulement) = risque de sur-optimisation → à valider sur d'autres marchés/périodes
 avant de les adopter. Idée de gestion : `RiskPercent` plutôt que lot fixe pour stabiliser
 le risque par signal.
+
+### 2026-09-25 — EMYO SMC v1.01, lot fixe 0,01, BTCUSD M1, 01/03 → 01/09/2026
+
+Réglages par défaut. Qualité d'historique **100 % ticks réels** (le test le plus fiable).
+
+- **−18 $** (−2 %), facteur de profit **0,90**, 147 positions = **49 signaux**,
+  45 % gagnantes. Gain moyen 2,37 $ / perte moyenne 2,16 $ (1,1 : 1 seulement).
+- Drawdown max **9 %**, série de 15 pertes (−42 $).
+- Mois : mars +10, avril −48, mai −18, juin +30, juillet +14, août −5.
+- Ventes +12 $, achats −30 $ (même sens que sur l'or, mais faible).
+- Heures : **pas** le schéma de l'or (après-midi positif) → ce filtre horaire n'est pas
+  confirmé, ne pas l'ajouter.
+
+Bilan SMC après 2 marchés : proche de l'équilibre mais légèrement perdant partout.
+Pas d'avantage démontré. En attente du NASDAQ.
