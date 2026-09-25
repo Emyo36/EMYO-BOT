@@ -176,3 +176,24 @@ spread (en % du risque), fermeture en fin de session, compteur sur le graphique.
 
 La vidéo annonce 75–80 % de réussite : c'est une affirmation marketing, seul le
 backtest dira ce que donnent ces règles automatisées.
+
+---
+
+# EMYO SMC pour TradingView (`EMYO_SMC_TradingView.pine`)
+
+Même méthode qu'EMYO SMC, en **indicateur TradingView** qui ne passe aucun ordre : il dessine
+les order blocks, marque les signaux (entrée, SL, TP1/2/3) et envoie une **alerte** à chaque
+signal. Les alertes TradingView tournent sur leurs serveurs : **le PC peut rester éteint**.
+Simplification : un seul order block suivi par sens (le plus récent).
+
+Installation :
+1. TradingView → graphique **1 minute** de l'or ou du Bitcoin.
+2. En bas : **Éditeur Pine** → nouveau script → coller tout le contenu du fichier →
+   **Enregistrer** → **Ajouter au graphique**.
+3. Alerte : icône réveil **Créer une alerte** → Condition : **EMYO SMC - alertes** →
+   **« N'importe quel appel de fonction alert() »** → cocher **Notifier sur l'application**
+   (téléphone avec l'application TradingView installée et connectée) → **Créer**.
+4. Une alerte par graphique (or, Bitcoin). Le plan gratuit limite le nombre d'alertes.
+
+Les prix TradingView (ex. OANDA:XAUUSD) peuvent légèrement différer de ceux de VT Markets :
+vérifier le prix sur MT5 avant d'entrer.

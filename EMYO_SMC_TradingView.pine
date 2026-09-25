@@ -1,0 +1,178 @@
+//@version=5
+// EMYO SMC - version TradingView (alertes seulement, ne passe aucun ordre)
+// Même méthode que EMYO_SMC.mq5 : tendance H1 + H4, order block M5,
+// retour sur la zone, confirmation CHoCH en M1, SL sous la correction,
+// 3 objectifs à 1R / 2R / 3R. À placer sur un graphique 1 minute.
+// Simplification : un seul order block suivi par sens (le plus récent).
+indicator("EMYO SMC - alertes", overlay = true, max_boxes_count = 100, max_labels_count = 200, max_lines_count = 400)
+
+// ---------------------- PARAMÈTRES ----------------------
+biasTf1       = input.timeframe("60",  "1re unité de temps de tendance", group = "Tendance de fond")
+biasTf2       = input.timeframe("240", "2e unité de temps de tendance", group = "Tendance de fond")
+useBias2      = input.bool(true, "Exiger aussi la 2e unité de temps", group = "Tendance de fond")
+emaLen        = input.int(50, "EMA de tendance", minval = 1, group = "Tendance de fond")
+
+setupTf       = input.timeframe("5", "Unité de temps des order blocks", group = "Order blocks")
+impulseBars   = input.int(3, "L'impulsion doit partir dans ces N bougies", minval = 1, group = "Order blocks")
+impulseAtr    = input.float(1.5, "Taille minimale de l'impulsion (ATR)", minval = 0.1, group = "Order blocks")
+
+pivotStrength = input.int(2, "Bougies de chaque côté d'un point haut / bas", minval = 1, group = "Confirmation M1")
+slBufferAtr   = input.float(0.2, "Marge du Stop Loss (ATR M1)", minval = 0, group = "Confirmation M1")
+minRiskAtr    = input.float(0.5, "Risque minimum (ATR M1)", minval = 0, group = "Confirmation M1")
+maxRiskAtr    = input.float(6.0, "Risque maximum (ATR M1)", minval = 0.1, group = "Confirmation M1")
+
+nTargets      = input.int(3, "Nombre d'objectifs", minval = 1, maxval = 3, group = "Objectifs")
+firstRR       = input.float(1.0, "1er objectif (multiple du risque)", minval = 0.1, group = "Objectifs")
+stepRR        = input.float(1.0, "Écart entre les objectifs (R)", minval = 0, group = "Objectifs")
+
+useSession    = input.bool(true, "Session américaine uniquement", group = "Session")
+sessionNY     = input.session("0930-1600:23456", "Horaires (heure de New York, lun-ven)", group = "Session")
+
+// ---------------------- TENDANCE DE FOND ----------------------
+// Dernière bougie CLÔTURÉE de chaque unité de temps (pas de recalcul du passé)
+[c1, e1] = request.security(syminfo.tickerid, biasTf1, [close[1], ta.ema(close, emaLen)[1]], lookahead = barmerge.lookahead_on)
+[c2, e2] = request.security(syminfo.tickerid, biasTf2, [close[1], ta.ema(close, emaLen)[1]], lookahead = barmerge.lookahead_on)
+
+bias1 = c1 > e1 ? 1 : c1 < e1 ? -1 : 0
+bias2 = c2 > e2 ? 1 : c2 < e2 ? -1 : 0
+bias  = useBias2 ? (bias1 == bias2 ? bias1 : 0) : bias1
+
+// ---------------------- ORDER BLOCKS (unité de temps des blocs) ----------------------
+// Bloc haussier : dernière bougie baissière avant une clôture au-dessus de son plus haut
+// d'au moins impulseAtr x ATR, en impulseBars bougies. Abandonné si une bougie clôture
+// sous son plus bas. Calculé sur des bougies clôturées (décalage de 1).
+obCalc() =>
+    atrS = ta.atr(14)[1]
+    var float lBullTop  = na
+    var float lBullBot  = na
+    var int   lBullTime = na
+    var float lBearTop  = na
+    var float lBearBot  = na
+    var int   lBearTime = na
+    for j = 1 to impulseBars
+        k = j + 1
+        if close[k] < open[k] and close[1] >= high[k] + impulseAtr * atrS and (na(lBullTime) or time[k] > lBullTime)
+            lBullTop  := high[k]
+            lBullBot  := low[k]
+            lBullTime := time[k]
+        if close[k] > open[k] and close[1] <= low[k] - impulseAtr * atrS and (na(lBearTime) or time[k] > lBearTime)
+            lBearTop  := high[k]
+            lBearBot  := low[k]
+            lBearTime := time[k]
+    if not na(lBullBot) and close[1] < lBullBot
+        lBullTop  := na
+        lBullBot  := na
+    if not na(lBearTop) and close[1] > lBearTop
+        lBearTop  := na
+        lBearBot  := na
+    [lBullTop, lBullBot, lBullTime, lBearTop, lBearBot, lBearTime]
+
+[bullTop, bullBot, bullTime, bearTop, bearBot, bearTime] = request.security(syminfo.tickerid, setupTf, obCalc(), lookahead = barmerge.lookahead_on)
+
+// ---------------------- CONFIRMATION M1 ----------------------
+atr1   = ta.atr(14)
+ph     = ta.pivothigh(high, pivotStrength, pivotStrength)
+pl     = ta.pivotlow(low, pivotStrength, pivotStrength)
+lastPH = ta.valuewhen(not na(ph), ph, 0)
+lastPL = ta.valuewhen(not na(pl), pl, 0)
+chochUp   = ta.crossover(close, lastPH)
+chochDown = ta.crossunder(close, lastPL)
+
+inSession = not useSession or not na(time(timeframe.period, sessionNY, "America/New_York"))
+
+// Point extrême de la correction depuis le contact avec la zone
+var float bullSwingLow  = na
+var float bearSwingHigh = na
+
+if nz(bullTime) != nz(bullTime[1])
+    bullSwingLow := na
+if not na(bullTop)
+    if not na(bullSwingLow)
+        bullSwingLow := math.min(bullSwingLow, low)
+    else if low <= bullTop
+        bullSwingLow := low
+    if close < bullBot
+        bullSwingLow := na
+else
+    bullSwingLow := na
+
+if nz(bearTime) != nz(bearTime[1])
+    bearSwingHigh := na
+if not na(bearBot)
+    if not na(bearSwingHigh)
+        bearSwingHigh := math.max(bearSwingHigh, high)
+    else if high >= bearBot
+        bearSwingHigh := high
+    if close > bearTop
+        bearSwingHigh := na
+else
+    bearSwingHigh := na
+
+// Un seul signal par order block
+var int usedBull = 0
+var int usedBear = 0
+
+stopBuy  = bullSwingLow - slBufferAtr * atr1
+riskBuy  = close - stopBuy
+stopSell = bearSwingHigh + slBufferAtr * atr1
+riskSell = stopSell - close
+
+riskOkBuy  = riskBuy >= minRiskAtr * atr1 and riskBuy <= maxRiskAtr * atr1
+riskOkSell = riskSell >= minRiskAtr * atr1 and riskSell <= maxRiskAtr * atr1
+buySignal  = barstate.isconfirmed and inSession and bias == 1 and not na(bullSwingLow) and chochUp and nz(bullTime) != usedBull and riskOkBuy
+sellSignal = barstate.isconfirmed and inSession and bias == -1 and not na(bearSwingHigh) and chochDown and nz(bearTime) != usedBear and riskOkSell
+
+// ---------------------- AFFICHAGE + ALERTES ----------------------
+fmt(x) => str.tostring(x, format.mintick)
+
+signalText(isBuy, entry, stop, risk) =>
+    dir = isBuy ? 1 : -1
+    txt = "EMYO SMC " + syminfo.ticker + " : " + (isBuy ? "ACHAT" : "VENTE") + " vers " + fmt(entry) + " | SL " + fmt(stop)
+    for k = 0 to nTargets - 1
+        txt := txt + " | TP" + str.tostring(k + 1) + " " + fmt(entry + dir * (firstRR + k * stepRR) * risk)
+    txt
+
+drawSignal(isBuy, entry, stop, risk) =>
+    dir = isBuy ? 1 : -1
+    label.new(bar_index, isBuy ? low : high, (isBuy ? "ACHAT " : "VENTE ") + fmt(entry),
+              style = isBuy ? label.style_label_up : label.style_label_down,
+              color = isBuy ? color.teal : color.maroon, textcolor = color.white, size = size.small)
+    line.new(bar_index, stop, bar_index + 30, stop, color = color.red, width = 2)
+    for k = 0 to nTargets - 1
+        tp = entry + dir * (firstRR + k * stepRR) * risk
+        line.new(bar_index, tp, bar_index + 30, tp, color = color.green, style = line.style_dashed)
+
+if buySignal
+    usedBull     := nz(bullTime)
+    bullSwingLow := na
+    drawSignal(true, close, stopBuy, riskBuy)
+    alert(signalText(true, close, stopBuy, riskBuy), alert.freq_once_per_bar_close)
+
+if sellSignal
+    usedBear      := nz(bearTime)
+    bearSwingHigh := na
+    drawSignal(false, close, stopSell, riskSell)
+    alert(signalText(false, close, stopSell, riskSell), alert.freq_once_per_bar_close)
+
+// Zones des order blocks
+var box bullBox = na
+var box bearBox = na
+if not na(bullTop) and nz(bullTime) != nz(bullTime[1])
+    bullBox := box.new(left = bullTime, top = bullTop, right = time, bottom = bullBot, xloc = xloc.bar_time,
+                       border_color = color.teal, bgcolor = color.new(color.teal, 85))
+else if not na(bullTop) and not na(bullBox)
+    box.set_right(bullBox, time)
+if not na(bearTop) and nz(bearTime) != nz(bearTime[1])
+    bearBox := box.new(left = bearTime, top = bearTop, right = time, bottom = bearBot, xloc = xloc.bar_time,
+                       border_color = color.maroon, bgcolor = color.new(color.maroon, 85))
+else if not na(bearTop) and not na(bearBox)
+    box.set_right(bearBox, time)
+
+// Panneau d'information
+var table info = table.new(position.top_right, 1, 3, bgcolor = color.new(color.black, 20))
+if barstate.islast
+    table.cell(info, 0, 0, "EMYO SMC", text_color = color.white)
+    table.cell(info, 0, 1, "Tendance : " + (bias == 1 ? "HAUSSIÈRE" : bias == -1 ? "BAISSIÈRE" : "aucune"),
+               text_color = bias == 1 ? color.lime : bias == -1 ? color.red : color.gray)
+    table.cell(info, 0, 2, timeframe.period == "1" ? (inSession ? "Session : OUVERTE" : "Session : fermée") :
+               "Mettez le graphique en 1 minute", text_color = timeframe.period == "1" ? color.white : color.orange)

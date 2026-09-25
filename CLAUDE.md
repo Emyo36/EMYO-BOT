@@ -58,6 +58,13 @@ entrée/SL/TP sur le téléphone (SendNotification) sans trader — réponse à 
 l'utilisateur de recevoir « les points d'entrée » chaque jour (Claude n'a pas accès aux prix
 en direct ni à son MT5). EMYO_BOT reste inchangé pour comparer.
 
+## Version TradingView (`EMYO_SMC_TradingView.pine`, 2026-09-25)
+
+Demande de l'utilisateur : « synchronisation avec TradingView ». Claude ne peut pas s'y
+connecter → indicateur Pine Script v5 qui reproduit EMYO SMC (1 order block par sens) et
+envoie `alert()` avec entrée/SL/TP. Alertes côté serveur TradingView (PC éteint possible).
+**Jamais compilé** dans TradingView au moment de sa création : demander les erreurs éventuelles.
+
 ## Points de vigilance connus
 
 - Un panier de 3 positions perdu avant le break-even ≈ 5,20 € de perte pour 6 € de gain
