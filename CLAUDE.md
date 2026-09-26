@@ -298,3 +298,6 @@ tous les trades en décembre 2024. −182 $, 9 signaux / 27 positions, 22 % gagn
 série de 15 positions perdantes. **Échantillon inutilisable** pour valider quoi que ce soit.
 → Le Bitcoin ne peut pas être validé sur 2024 chez ce courtier ; valider le filtre sur
 l'or 2024 (tests A/B), et pour le Bitcoin passer par la démo.
+Test C (BTCUSD 2024, référence MinRiskAtr 0,5) : **résultat identique au test D** (−182 $,
+9 signaux, décembre 2024 seulement) → le filtre n'a écarté aucun de ces 9 signaux ; toujours
+inutilisable. En attente des tests A/B sur l'or 2024.
