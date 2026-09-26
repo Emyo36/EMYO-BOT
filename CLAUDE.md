@@ -289,3 +289,12 @@ BTC +38 $ au lot fixe).
 Piste cohérente sur les 2 marchés (mais tirée des mêmes données → à valider sur 2024) :
 écarter les setups à SL serré via `MinRiskAtr` (0,5 → 1,5) ou `MaxSpreadPercentOfRisk`
 (15 → 7). Ne pas passer à un risque fixe en $ tant que le résultat en R est négatif.
+
+### 2026-09-26 — Validation 2024, test D : EMYO SMC v1.03, BTCUSD, MinRiskAtr 1.5
+
+Période demandée 01/01/2024 → 01/01/2025, mais **historique BTCUSD de VT Markets
+disponible seulement à partir de mi-décembre 2024** (22 179 barres M1, 0 % ticks réels) :
+tous les trades en décembre 2024. −182 $, 9 signaux / 27 positions, 22 % gagnantes,
+série de 15 positions perdantes. **Échantillon inutilisable** pour valider quoi que ce soit.
+→ Le Bitcoin ne peut pas être validé sur 2024 chez ce courtier ; valider le filtre sur
+l'or 2024 (tests A/B), et pour le Bitcoin passer par la démo.
