@@ -301,3 +301,15 @@ l'or 2024 (tests A/B), et pour le Bitcoin passer par la démo.
 Test C (BTCUSD 2024, référence MinRiskAtr 0,5) : **résultat identique au test D** (−182 $,
 9 signaux, décembre 2024 seulement) → le filtre n'a écarté aucun de ces 9 signaux ; toujours
 inutilisable. En attente des tests A/B sur l'or 2024.
+
+### 2026-09-26 — Validation 2024, test A : EMYO SMC, XAUUSD-STD, référence
+
+Même problème que le Bitcoin : **historique de l'or chez VT Markets seulement depuis ~novembre
+2024** (14 528 barres M1). +33 $ sur 7 signaux (nov.–déc. 2024) : échantillon inutilisable.
+**Conclusion : aucune donnée avant fin 2024 chez ce courtier → le test long 01/2025–09/2026
+utilisait déjà toute l'histoire disponible ; validation hors échantillon impossible en backtest.**
+
+Plan retenu : validation **en démo, en parallèle** : sur l'or et le Bitcoin, un EMYO SMC
+« référence » (magic 360037) et un « risque min 1.5 » (`SMC_2_risque_min_1.5.set`, magic passé
+à **360038** pour que les deux ne se gênent pas sur le même symbole). Option alternative :
+backtester 2022–2024 chez un autre courtier (compte démo avec historique plus long).

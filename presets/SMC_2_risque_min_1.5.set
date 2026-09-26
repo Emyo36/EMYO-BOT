@@ -47,6 +47,6 @@ EndHour=0
 MaxTradesPerDay=30
 MaxDailyLossPercent=3
 DailyProfitTargetMoney=0
-MagicNumber=360037
+MagicNumber=360038
 AutoCloseOnStop=true
 ShowPanel=true
