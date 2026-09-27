@@ -380,3 +380,15 @@ dans les 30 min + tendance) sont trop rares. v1.01 : ajout d'un **diagnostic** (
 « DIAGNOSTIC EMYO AMD » en fin de test) pour voir quelle condition bloque, et preset
 `AMD_3_range_nuit.set` (range 20h → 8h NY). Ne pas assouplir au hasard : décider d'après le diagnostic.
 
+### 2026-09-27 — Contrôle DJ30 relancé : EMYO SMC, Lots 0,1, dépôt 10 000, 01/01/2025 → 01/09/2026
+
+43 % ticks réels. **+24,88 €** (+0,25 %), facteur de profit **1,02**, 459 positions = 153 signaux,
+49 % gagnantes, gain moyen 5,66 € / perte moyenne 5,43 €, drawdown max 3,1 %.
+2025 +134 €, 2026 −110 € ; 8 mois positifs sur 20. Sorties : TP +1 097 €, SL −1 156 €, fin de session +84 €.
+
+**Bilan EMYO SMC sur 4 marchés (20 mois, réglages de référence)** : or FP 1,10 ; BTC 1,04 ;
+DJ30 1,02 ; EURUSD 0,93. Tout est autour de l'équilibre ; seul l'or dépasse nettement 1, et
+grâce à quelques gros gains. **Conclusion : pas d'avantage démontré de la méthode** ; les coûts
+réels (spread, glissement en réel) suffiraient probablement à rendre le tout perdant.
+La démo sur l'or reste le juge ; ne pas passer en réel sur la seule base de ces backtests.
+
