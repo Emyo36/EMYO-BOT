@@ -238,6 +238,13 @@ Différences voulues avec les autres bots : **24h/24**, positions gardées **plu
 le week-end** (frais de swap, risque d'écart à la réouverture), taux de réussite attendu
 faible (30–40 %) compensé par des gains bien plus gros que les pertes.
 
+**Option entrée M5** (v1.01, `presets/TREND_2_entree_M5.set`) : la tendance reste lue en H4
+(EMA 200 H4) et la sortie reste le stop suiveur H4, mais l'**entrée** se fait sur une cassure du
+canal 20 **M5** avec un stop à 2 ATR **M5** (`EntryTimeframe = M5`, 3 entrées par jour maximum).
+Stop plus serré → lot plus gros pour le même risque et meilleur rapport gain/risque quand la
+tendance part, mais aussi beaucoup plus de stops touchés par le bruit (c'est ce qui faisait
+perdre les stops serrés d'EMYO SMC) : à comparer au réglage tout H4 sur la même période.
+
 Attention à la taille du compte : sur l'or, un stop de 2 ATR H4 représente souvent 40 à 80 $
 au lot minimum 0,01, soit 4 à 8 % d'un compte de 1 000 → trades ignorés. Backtester avec un
 dépôt de 10 000 pour juger la méthode (`presets/TREND_1_reference.set`, mode « OHLC sur M1 »,

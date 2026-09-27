@@ -1,12 +1,13 @@
 //+------------------------------------------------------------------+
 //|             EMYO TREND - SUIVI DE TENDANCE (H4 par défaut)        |
-//|  Filtre EMA 200, entrée sur cassure du canal de Donchian,         |
-//|  stop initial en ATR, sortie par stop suiveur sur le canal court. |
+//|  Filtre EMA 200, entrée sur cassure du canal de Donchian (sur H4  |
+//|  ou sur une unité plus courte, ex. M5), stop initial en ATR,      |
+//|  sortie par stop suiveur sur le canal court (H4 par défaut).      |
 //|  Peu de trades, gains laissés courir, positions sur plusieurs     |
 //|  jours (week-ends compris).                                       |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -17,11 +18,13 @@ input double MaxRiskPercentAtMinLot = 3.0; // Si le lot minimum risque plus que 
 input double MaxLots            = 1.0;   // Lot maximum
 
 input group "Signal"
-input ENUM_TIMEFRAMES TrendTimeframe = PERIOD_H4; // Unité de temps du bot
+input ENUM_TIMEFRAMES TrendTimeframe = PERIOD_H4; // Unité de temps de la tendance (EMA)
+input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_H4; // Unité de temps de l'entrée (cassure + ATR du stop), ex. M5
+input ENUM_TIMEFRAMES ExitTimeframe  = PERIOD_H4; // Unité de temps de la sortie (stop suiveur)
 input int    TrendEmaPeriod     = 200;   // Filtre : achats au-dessus de l'EMA, ventes en dessous
 input int    EntryChannel       = 20;    // Entrée : clôture au-delà du plus haut / plus bas des N bougies précédentes
 input int    ExitChannel        = 10;    // Sortie : stop suiveur sur le plus bas / plus haut des N dernières bougies
-input int    AtrPeriod          = 20;    // Période de l'ATR
+input int    AtrPeriod          = 20;    // Période de l'ATR (unité de temps de l'entrée)
 input double StopAtr            = 2.0;   // Stop initial à N x ATR du prix d'entrée
 input bool   AllowLong          = true;  // Autoriser les achats
 input bool   AllowShort         = true;  // Autoriser les ventes
@@ -30,6 +33,7 @@ input group "Filtres"
 input double MaxSpreadPercentOfRisk = 10; // Spread max. en % du risque (0 = off)
 
 input group "Sécurité"
+input int    MaxTradesPerDay    = 0;     // Entrées par jour au maximum (0 = illimité ; conseillé 3 en entrée M5)
 input double MaxDailyLossPercent = 3;    // Pas de nouvelle entrée après cette perte du jour, positions ouvertes comprises (0 = off)
 input ulong  MagicNumber        = 360040;
 input bool   SendPushAlerts     = true;  // Envoyer chaque entrée sur le téléphone (MetaQuotes ID)
@@ -50,14 +54,14 @@ int OnInit()
 {
    if(RiskPercent <= 0 || MaxRiskPercentAtMinLot < 0 || MaxLots <= 0 || TrendEmaPeriod < 1 ||
       EntryChannel < 2 || ExitChannel < 2 || AtrPeriod < 1 || StopAtr <= 0 ||
-      MaxSpreadPercentOfRisk < 0 || MaxDailyLossPercent < 0 || (!AllowLong && !AllowShort))
+      MaxSpreadPercentOfRisk < 0 || MaxDailyLossPercent < 0 || MaxTradesPerDay < 0 || (!AllowLong && !AllowShort))
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
    }
 
    emaHandle = iMA(_Symbol, TrendTimeframe, TrendEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   atrHandle = iATR(_Symbol, TrendTimeframe, AtrPeriod);
+   atrHandle = iATR(_Symbol, EntryTimeframe, AtrPeriod);
    if(emaHandle == INVALID_HANDLE || atrHandle == INVALID_HANDLE)
    {
       Print("Erreur : impossible de créer les indicateurs");
@@ -67,7 +71,8 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   Print("EMYO TREND lancé sur ", _Symbol, " en ", EnumToString(TrendTimeframe),
+   Print("EMYO TREND lancé sur ", _Symbol, " | tendance ", EnumToString(TrendTimeframe),
+         " | entrée ", EnumToString(EntryTimeframe), " | sortie ", EnumToString(ExitTimeframe),
          " | risque ", DoubleToString(RiskPercent, 2), " % par trade");
    UpdatePanel();
    return(INIT_SUCCEEDED);
@@ -153,6 +158,26 @@ double ClosedProfitSince(datetime from)
    return total;
 }
 
+// Nombre d'entrées du bot depuis 'from'
+int EntriesSince(datetime from)
+{
+   int count = 0;
+   if(!HistorySelect(from, TimeCurrent()))
+      return 0;
+
+   for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0)
+         continue;
+      if(HistoryDealGetString(deal, DEAL_SYMBOL) == _Symbol &&
+         HistoryDealGetInteger(deal, DEAL_MAGIC) == (long)MagicNumber &&
+         HistoryDealGetInteger(deal, DEAL_ENTRY) == DEAL_ENTRY_IN)
+         count++;
+   }
+   return count;
+}
+
 //+----------------------- TAILLE DES LOTS --------------------------+
 double MoneyPerLot(double distance)
 {
@@ -227,7 +252,7 @@ void SendEntryAlert(int dir, double entry, double stop, double lots)
 
 //+----------------------- GESTION DE LA POSITION -------------------+
 // Stop suiveur : SL au plus bas (achat) / plus haut (vente) des ExitChannel dernières
-// bougies clôturées, seulement s'il protège mieux que le SL actuel.
+// bougies clôturées de ExitTimeframe, seulement s'il protège mieux que le SL actuel.
 void TrailPosition(ulong ticket, const double &high[], const double &low[])
 {
    if(!PositionSelectByTicket(ticket))
@@ -278,7 +303,8 @@ void UpdatePanel()
                   (SymbolInfoDouble(_Symbol, SYMBOL_BID) > lastEma ? "HAUSSIÈRE (achats seulement)"
                                                                    : "BAISSIÈRE (ventes seulement)");
 
-   Comment("EMYO TREND  |  ", _Symbol, "  |  ", EnumToString(TrendTimeframe), "\n",
+   Comment("EMYO TREND  |  ", _Symbol, "  |  tendance ", EnumToString(TrendTimeframe),
+           "  |  entrée ", EnumToString(EntryTimeframe), "  |  sortie ", EnumToString(ExitTimeframe), "\n",
            "Tendance (EMA ", TrendEmaPeriod, ") : ", trend, "\n",
            "Achat si clôture > ", DoubleToString(lastUpper, _Digits),
            "  |  Vente si clôture < ", DoubleToString(lastLower, _Digits), "\n",
@@ -294,21 +320,25 @@ void OnTrade()
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Tout se décide une fois par bougie clôturée de l'unité de temps du bot
-   datetime barTime = iTime(_Symbol, TrendTimeframe, 0);
+   // Tout se décide une fois par bougie clôturée de l'unité de temps de l'entrée
+   datetime barTime = iTime(_Symbol, EntryTimeframe, 0);
    if(barTime == 0 || barTime == lastBarTime)
       return;
 
    // Bougies clôturées : indice 0 = dernière bougie clôturée
-   int need = (int)MathMax(EntryChannel + 1, ExitChannel);
-   double high[], low[], close[];
+   int need = EntryChannel + 1;
+   double high[], low[], close[], exitHigh[], exitLow[];
    ArraySetAsSeries(high, true);
    ArraySetAsSeries(low, true);
    ArraySetAsSeries(close, true);
+   ArraySetAsSeries(exitHigh, true);
+   ArraySetAsSeries(exitLow, true);
 
-   if(CopyHigh (_Symbol, TrendTimeframe, 1, need, high)  < need ||
-      CopyLow  (_Symbol, TrendTimeframe, 1, need, low)   < need ||
-      CopyClose(_Symbol, TrendTimeframe, 1, need, close) < need)
+   if(CopyHigh (_Symbol, EntryTimeframe, 1, need, high)  < need ||
+      CopyLow  (_Symbol, EntryTimeframe, 1, need, low)   < need ||
+      CopyClose(_Symbol, EntryTimeframe, 1, need, close) < need ||
+      CopyHigh (_Symbol, ExitTimeframe, 1, ExitChannel, exitHigh) < ExitChannel ||
+      CopyLow  (_Symbol, ExitTimeframe, 1, ExitChannel, exitLow)  < ExitChannel)
       return;                                       // historique pas prêt : on réessaie au tick suivant
 
    double ema = ClosedValue(emaHandle);
@@ -325,14 +355,19 @@ void OnTick()
    ulong ticket = SelectOwnPosition();
    if(ticket != 0)
    {
-      TrailPosition(ticket, high, low);
+      TrailPosition(ticket, exitHigh, exitLow);
       UpdatePanel();
       return;
    }
 
-   // 2) Garde-fou : pas de nouvelle entrée après la perte maximale du jour
+   // 2) Garde-fous : nombre d'entrées et perte maximale du jour
    datetime now      = TimeCurrent();
    datetime dayStart = now - (now % 86400);
+   if(MaxTradesPerDay > 0 && EntriesSince(dayStart) >= MaxTradesPerDay)
+   {
+      UpdatePanel();
+      return;
+   }
    if(MaxDailyLossPercent > 0 &&
       ClosedProfitSince(dayStart) + FloatingProfit() <=
       -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)

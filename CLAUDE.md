@@ -72,7 +72,7 @@ range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Dis
 copiée par erreur → retirée ; **recompilé sans erreur** par l'utilisateur le 27/09. Presets `AMD_1_reference.set`,
 `AMD_2_objectifs_R.set`. Le script `presets` est régénéré à partir des `input` du code.
 
-## Quatrième bot : EMYO TREND (`EMYO_TREND.mq5`, v1.00, 2026-09-27)
+## Quatrième bot : EMYO TREND (`EMYO_TREND.mq5`, v1.01, 2026-09-27)
 
 Demande de l'utilisateur (« fais-le maintenant ») après le bilan SMC ≈ équilibre : changer
 d'approche. Suivi de tendance H4 : EMA 200 (filtre), cassure du canal de Donchian 20 (entrée),
@@ -80,6 +80,9 @@ stop initial 2 ATR(20), stop suiveur sur le canal 10, pas de TP, 1 % de risque p
 (trade ignoré si le lot minimum risque > 3 %), une position à la fois, 24h/24, positions sur
 plusieurs jours. Magic **360040**. **Jamais compilé.** Écrit de zéro (fonctions reprises
 d'EMYO SMC). Le filtre « session US » et le scalping M1 ne s'appliquent pas à ce bot (voulu).
+v1.01 (même jour, demande « entrée en M5 ») : `EntryTimeframe` / `ExitTimeframe` séparés,
+`MaxTradesPerDay` ; preset `TREND_2_entree_M5.set` (tendance H4, cassure M5, stop 2 ATR M5,
+sortie H4, 3 entrées/jour). Prévenu : stops serrés = risque de bruit (cf. analyse en R de SMC).
 Tests prévus : or 01/01/2023 → 01/09/2026 (dépôt 10 000, OHLC M1), puis EURUSD, DJ30, BTC en
 contrôle, sans rien optimiser.
 
