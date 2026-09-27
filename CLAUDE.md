@@ -113,6 +113,10 @@ l'or + EMA 50/200 + RSI H4 et nos règles de risque. Claude Code en ligne de com
 (npm → claude.exe invalide ; installateur officiel bloqué par Cloudflare) → inutile ici.
 Précautions données : ne pas relier le courtier à TradingView, fermer TradingView après usage.
 Le code n'a pas pu être relu par Claude (accès au dépôt refusé dans l'environnement cloud).
+**Test réussi le 27/09/2026** dans une session locale de l'application Claude (onglet Code,
+mode auto) : `tv_health_check` OK, CDP actif, graphique `OANDA:XAUUSD` en M1. Prochain usage
+utile : faire compiler `EMYO_SMC_TradingView.pine` par cet outil (pine_set_source /
+pine_smart_compile / pine_get_errors) — il n'a jamais été compilé.
 
 ## Points de vigilance connus
 
