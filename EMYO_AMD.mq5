@@ -6,7 +6,7 @@
 //|  la tendance, objectif sur la liquidité de l'autre côté.          |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -107,6 +107,13 @@ double   postLow    = 0;
 datetime signalDay  = 0;
 int      signalsToday = 0;
 
+// Diagnostic : étape la plus avancée atteinte chaque jour de session (bilan en fin de test)
+#define  DIAG_STAGES 9
+datetime diagDay    = 0;
+int      diagStage  = -1;
+int      diagCount[DIAG_STAGES];
+int      amdStage   = 0;      // étape atteinte par le dernier appel de CheckAmdSignal
+
 //+------------------------------------------------------------------+
 int OnInit()
 {
@@ -124,6 +131,10 @@ int OnInit()
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
    }
+
+   ArrayInitialize(diagCount, 0);
+   diagDay   = 0;
+   diagStage = -1;
 
    biasHandle1    = iMA(_Symbol, BiasTimeframe1, BiasEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    biasHandle2    = iMA(_Symbol, BiasTimeframe2, BiasEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
@@ -161,6 +172,7 @@ void OnDeinit(const int reason)
    if(atrM1Handle    != INVALID_HANDLE) IndicatorRelease(atrM1Handle);
    if(atrSetupHandle != INVALID_HANDLE) IndicatorRelease(atrSetupHandle);
 
+   PrintDiagnostic();
    Comment("");
    Print("EMYO AMD arrêté");
 }
@@ -601,6 +613,47 @@ bool UpdateAsiaRange()
    return true;
 }
 
+//+----------------------- DIAGNOSTIC -------------------------------+
+// Garde, pour chaque jour de session, l'étape la plus avancée atteinte :
+// 0 range absent, 1 pas de tendance, 2 pas de chasse aux stops, 3 pas de retour dans le range,
+// 4 liquidité visée déjà prise, 5 pas de CHoCH, 6 risque hors limites, 7 objectif trop proche,
+// 8 signal.
+void DiagRecord(int stage)
+{
+   datetime nyNow = NewYorkTime();
+   datetime day   = nyNow - (nyNow % 86400);
+   if(day != diagDay)
+   {
+      if(diagStage >= 0)
+         diagCount[diagStage]++;
+      diagDay   = day;
+      diagStage = -1;
+   }
+   if(stage > diagStage)
+      diagStage = stage;
+}
+
+void PrintDiagnostic()
+{
+   if(diagStage >= 0)
+   {
+      diagCount[diagStage]++;
+      diagStage = -1;
+   }
+
+   int days = 0;
+   for(int i = 0; i < DIAG_STAGES; i++)
+      days += diagCount[i];
+   if(days == 0)
+      return;
+
+   Print("DIAGNOSTIC EMYO AMD sur ", days, " jours de session | range absent : ", diagCount[0],
+         " | pas de tendance : ", diagCount[1], " | pas de chasse aux stops : ", diagCount[2],
+         " | pas de retour dans le range : ", diagCount[3], " | liquidité déjà prise : ", diagCount[4],
+         " | pas de CHoCH : ", diagCount[5], " | risque hors limites : ", diagCount[6],
+         " | objectif trop proche : ", diagCount[7], " | signaux : ", diagCount[8]);
+}
+
 //+----------------------- SIGNAL AMD -------------------------------+
 // Achat (dir = 1) : dans les ConfirmLookback dernières bougies, une mèche est passée sous
 // le range asiatique (manipulation) et c'est le plus bas depuis la fin du range ; le prix
@@ -611,6 +664,7 @@ bool CheckAmdSignal(int dir, const datetime &time[], const double &high[], const
                     const double &close[], int size, double atr, double &stopPrice, double &target)
 {
    int L = ConfirmLookback;
+   amdStage = 2;
 
    if(dir == 1)
    {
@@ -619,10 +673,13 @@ bool CheckAmdSignal(int dir, const datetime &time[], const double &high[], const
          return false;
       if(low[lowIdx] >= asiaLow || low[lowIdx] > postLow)
          return false;                               // pas de chasse aux stops sous le range
+      amdStage = 3;
       if(close[1] <= asiaLow)
          return false;                               // pas encore revenu dans le range
+      amdStage = 4;
       if(TargetMode == TARGET_LIQUIDITY && postHigh >= asiaHigh)
          return false;                               // la liquidité visée a déjà été prise
+      amdStage = 5;
 
       for(int j = lowIdx + 1; j <= lowIdx + ChochMaxBars && j + PivotStrength < size; j++)
       {
@@ -650,10 +707,13 @@ bool CheckAmdSignal(int dir, const datetime &time[], const double &high[], const
       return false;
    if(high[highIdx] <= asiaHigh || high[highIdx] < postHigh)
       return false;
+   amdStage = 3;
    if(close[1] >= asiaHigh)
       return false;
+   amdStage = 4;
    if(TargetMode == TARGET_LIQUIDITY && postLow <= asiaLow)
       return false;
+   amdStage = 5;
 
    for(int j = highIdx + 1; j <= highIdx + ChochMaxBars && j + PivotStrength < size; j++)
    {
@@ -834,8 +894,13 @@ void OnTick()
    bool rangeReady = UpdateAsiaRange();
    UpdatePanel();
 
-   if(!rangeReady || !IsTradingHour())
+   if(!IsTradingHour())
       return;
+   if(!rangeReady)
+   {
+      DiagRecord(0);
+      return;
+   }
 
    if(signalDay != asiaDay)
    {
@@ -865,7 +930,10 @@ void OnTick()
    // 1) Tendance de fond : la manipulation doit aller contre elle
    int bias = GetBias();
    if(bias == 0)
+   {
+      DiagRecord(1);
       return;
+   }
    if(openDirection != 0 && openDirection != bias)
       return;
 
@@ -891,22 +959,32 @@ void OnTick()
    // 3) Manipulation + retour dans le range + CHoCH
    double stopPrice = 0, target = 0;
    if(!CheckAmdSignal(bias, time, high, low, close, size, atr, stopPrice, target))
+   {
+      DiagRecord(amdStage);
       return;
+   }
 
    double entry = (bias == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double risk  = (bias == 1) ? entry - stopPrice : stopPrice - entry;
    if(risk < MinRiskAtr * atr || risk > MaxRiskAtr * atr)
+   {
+      DiagRecord(6);
       return;
+   }
 
    if(TargetMode == TARGET_LIQUIDITY)
    {
       double toTarget = (bias == 1) ? target - entry : entry - target;
       if(toTarget < MinFirstTargetRR * risk)
+      {
+         DiagRecord(7);
          return;                                    // objectif trop proche pour le risque pris
+      }
    }
 
    int count = (int)MathMin(TradesPerSignal, room);
    signalsToday++;
+   DiagRecord(8);
 
    Print("Signal AMD ", (bias == 1 ? "ACHAT" : "VENTE"), " | range asiatique [",
          DoubleToString(asiaLow, _Digits), " - ", DoubleToString(asiaHigh, _Digits), "]");

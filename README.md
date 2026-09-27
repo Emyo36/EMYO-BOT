@@ -208,6 +208,12 @@ Numéro magique 360039. Mêmes protections que les autres (session américaine, 
    - **R** : 1R / 2R / 3R comme EMYO SMC (`presets/AMD_2_objectifs_R.set`).
    Break-even à 1R, **un seul signal par jour** (`MaxSignalsPerDay`).
 
+**Diagnostic** (v1.01) : à la fin d'un backtest, le Journal affiche une ligne
+« DIAGNOSTIC EMYO AMD » qui compte, pour chaque jour de session, l'étape la plus avancée
+atteinte (pas de tendance, pas de chasse aux stops, pas de retour dans le range, liquidité déjà
+prise, pas de CHoCH, risque hors limites, objectif trop proche, signal). Elle montre quelle
+condition bloque. Variante : `presets/AMD_3_range_nuit.set` (range 20h → 8h, Asie + Londres).
+
 À tester sur les mêmes 20 mois qu'EMYO SMC (or + Bitcoin, `presets/AMD_1_reference.set`).
 Jamais compilé au moment de sa création : envoyer les erreurs éventuelles de MetaEditor.
 

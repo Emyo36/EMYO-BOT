@@ -62,7 +62,7 @@ v1.04 (2026-09-27, 2e vidéo SMC de Casper) : options **désactivées par défau
 `RequireImbalance` (FVG dans l'impulsion du bloc) et `RequireOte` (correction entre 0,618 et
 0,786 de l'impulsion). Presets `SMC_4_imbalance.set`, `SMC_5_ote.set`. Pas encore compilé.
 
-## Troisième bot : EMYO AMD (`EMYO_AMD.mq5`, v1.00, 2026-09-27)
+## Troisième bot : EMYO AMD (`EMYO_AMD.mq5`, v1.01 ; v1.00 compilé OK, 2026-09-27)
 
 Même vidéo : Accumulation (range asiatique 20h–0h New York), Manipulation (mèche au-delà du
 range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Distribution
@@ -369,4 +369,14 @@ Les ticks réels de l'or chez VT Markets n'existent qu'à partir du **08/12/2025
 signalés « tick prices mismatch » presque tous les jours → problème de données du mode
 « ticks réels », pas du code. À relancer après redémarrage de MT5 ; sinon en mode
 « Chaque tick » (généré) — et refaire alors la référence SMC dans le même mode pour comparer.
+
+### 2026-09-27 — EMYO AMD v1.00, XAUUSD-STD, 01/01/2025 → 01/09/2026, mode OHLC M1 (98 %)
+
+Relancé en mode sans ticks réels : **3 signaux seulement en 20 mois** (24/12/2025, 13/02/2026,
+08/04/2026), 9 positions, **toutes au SL** : −152,52 € (−15 %). Pertes de 10 à 21 € par position
+au lot 0,01 (SL de 12 à 25 $ sur l'or). Échantillon inutilisable ; aucun signal en 2025 → les
+conditions cumulées (extrême du jour pendant la session US + autre côté du range intact + CHoCH
+dans les 30 min + tendance) sont trop rares. v1.01 : ajout d'un **diagnostic** (ligne
+« DIAGNOSTIC EMYO AMD » en fin de test) pour voir quelle condition bloque, et preset
+`AMD_3_range_nuit.set` (range 20h → 8h NY). Ne pas assouplir au hasard : décider d'après le diagnostic.
 
