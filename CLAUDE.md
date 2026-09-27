@@ -26,7 +26,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
 | Décision | Raison |
 |---|---|
 | Unité de temps **M1** | Demande de l'utilisateur : scalping 1 minute |
-| Marchés : **or (XAUUSD-STD) et Bitcoin (BTCUSD)** | Ce que l'utilisateur trade ; NASDAQ abandonné le 2026-09-25 à sa demande |
+| Marché : **or (XAUUSD-STD) uniquement** | NASDAQ abandonné le 2026-09-25, Bitcoin abandonné le 2026-09-27 (demande de l'utilisateur : son compte démo VT Markets n'a pas de crypto). Les backtests BTC restent un contrôle possible contre la sur-optimisation |
 | Toutes les distances en **ATR** (mode pips gardé pour le forex) | Les pips n'ont pas de sens sur ces marchés |
 | **Suivi de tendance** : EMA 20 / EMA 50 M1 (+ M15 en mode normal) | « Prendre le train » de la tendance |
 | Entrées **momentum** (+ replis en mode agressif) | Demande : « beaucoup plus sur le momentum » |
@@ -97,9 +97,10 @@ envoie `alert()` avec entrée/SL/TP. Alertes côté serveur TradingView (PC éte
 4. **Démo EMYO SMC** 1 à 2 mois (or + Bitcoin, lot fixe 0,01) après la validation.
    Petit compte réel seulement si la démo confirme les backtests.
 5. ~~Stratégie de la vidéo~~ : faite (EMYO SMC).
-6. **Compte démo créé** par l'utilisateur (2026-09-27). Lancer : or + Bitcoin, EMYO SMC
-   `SMC_1_reference` (360037) et `SMC_2_risque_min_1.5` (360038), lot 0,01.
-7. Backtests 01/01/2025 → 01/09/2026 (or + BTC) : `AMD_1_reference`, puis `SMC_4_imbalance`,
+6. **Compte démo créé** par l'utilisateur (2026-09-27), sans crypto → **Bitcoin abandonné**.
+   Démo sur l'or seulement : EMYO SMC `SMC_1_reference` (360037) et
+   `SMC_2_risque_min_1.5` (360038), lot 0,01, 1 à 2 mois sans rien changer.
+7. Backtests 01/01/2025 → 01/09/2026 (or ; BTC en contrôle facultatif) : `AMD_1_reference`, puis `SMC_4_imbalance`,
    `SMC_5_ote`, à comparer à la référence SMC (or +164 $ FP 1,10 ; BTC +38 $ FP 1,04).
 
 ## Journal des résultats
