@@ -357,4 +357,16 @@ Prochain contrôle proposé : DJ30.
 inférieur au **volume minimal** du DJ30 chez VT Markets → `CalculateLots` renvoie 0
 (« Lot calculé trop petit » dans le journal). À relancer avec `Lots` = volume minimal du symbole
 (Ctrl+U → DJ30. → Spécification).
+**Confirmé par le journal** : « minimum du courtier : 0.1 » ; au lot 0,1 une position = ~11,70 € à 1R
+(≈ 35 € de risque par signal de 3 positions) → relancer avec `Lots = 0.1` et un dépôt de test
+de 10 000 pour garder des proportions comparables (sinon l'arrêt à −3 % bloque vite).
+
+### 2026-09-27 — 1er backtest EMYO AMD, XAUUSD-STD, 01/01/2025 → 01/09/2026 : test vide
+
+Le bot démarre (OnInit OK, heure de New York correcte) mais le testeur affiche
+« **0 ticks, 0 bars generated** » après 15 s de prétraitement des ticks, sans erreur du bot.
+Les ticks réels de l'or chez VT Markets n'existent qu'à partir du **08/12/2025** et sont
+signalés « tick prices mismatch » presque tous les jours → problème de données du mode
+« ticks réels », pas du code. À relancer après redémarrage de MT5 ; sinon en mode
+« Chaque tick » (généré) — et refaire alors la référence SMC dans le même mode pour comparer.
 
