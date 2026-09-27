@@ -473,22 +473,6 @@ bool IsPivotLow(const double &low[], int j, int size)
    return true;
 }
 
-// Zone OTE : la correction doit revenir entre OteMinLevel et OteMaxLevel de l'impulsion
-// (0 % = extrême de l'impulsion, 100 % = départ du bloc). 'price' = extrême de la correction.
-bool InOteZone(const OrderBlock &ob, double price)
-{
-   if(!RequireOte)
-      return true;
-
-   double start = (ob.dir == 1) ? ob.bottom : ob.top;
-   double range = MathAbs(ob.extreme - start);
-   if(range <= 0)
-      return false;
-
-   double retracement = MathAbs(ob.extreme - price) / range;
-   return retracement >= OteMinLevel && retracement <= OteMaxLevel;
-}
-
 //+----------------------- GESTION ----------------------------------+
 // Break-even : quand le gain atteint BreakEvenRR fois le risque initial,
 // le SL passe au prix d'entrée + BreakEvenLockRR fois le risque.

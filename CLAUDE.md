@@ -68,7 +68,8 @@ Même vidéo : Accumulation (range asiatique 20h–0h New York), Manipulation (m
 range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Distribution
 (retour dans le range + CHoCH M1). SL au-delà de la mèche, TP1 = autre côté du range
 (liquidité), 1 signal par jour. Magic **360039**. Fonctions communes copiées d'EMYO SMC
-(déjà compilées). **Jamais compilé** : demander les erreurs. Presets `AMD_1_reference.set`,
+(déjà compilées). 1re compilation (27/09) : 10 erreurs, car `InOteZone` d'EMYO SMC avait été
+copiée par erreur → retirée ; à recompiler. Presets `AMD_1_reference.set`,
 `AMD_2_objectifs_R.set`. Le script `presets` est régénéré à partir des `input` du code.
 
 ## Version TradingView (`EMYO_SMC_TradingView.pine`, 2026-09-25)
