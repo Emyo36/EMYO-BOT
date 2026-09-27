@@ -1,0 +1,18 @@
+; EMYO TREND - reglages par defaut (H4, EMA 200, canal 20/10, stop 2 ATR, risque 1 %)
+RiskPercent=1.0
+MaxRiskPercentAtMinLot=3.0
+MaxLots=1.0
+TrendTimeframe=16388
+TrendEmaPeriod=200
+EntryChannel=20
+ExitChannel=10
+AtrPeriod=20
+StopAtr=2.0
+AllowLong=true
+AllowShort=true
+MaxSpreadPercentOfRisk=10
+MaxDailyLossPercent=3
+MagicNumber=360040
+SendPushAlerts=true
+AutoCloseOnStop=false
+ShowPanel=true

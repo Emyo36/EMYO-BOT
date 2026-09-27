@@ -219,6 +219,32 @@ Jamais compilé au moment de sa création : envoyer les erreurs éventuelles de 
 
 ---
 
+# EMYO TREND (`EMYO_TREND.mq5`)
+
+Quatrième bot, **approche différente** : suivi de tendance sur **H4**, peu de trades, gains
+laissés courir (méthode type « Turtles » / fonds trend following). Numéro magique 360040.
+
+1. **Filtre** : achats seulement au-dessus de l'EMA 200 H4, ventes seulement en dessous.
+2. **Entrée** : une bougie H4 clôture au-dessus du plus haut des 20 bougies précédentes
+   (achat), ou sous leur plus bas (vente).
+3. **Stop initial** à 2 ATR (20) du prix d'entrée. **Pas de TP.**
+4. **Sortie** : stop suiveur sur le plus bas (achat) / plus haut (vente) des 10 dernières
+   bougies H4, mis à jour à chaque clôture H4.
+5. **Taille** : 1 % du solde risqué par trade (`RiskPercent`). Si même le lot minimum
+   risque plus de 3 % (`MaxRiskPercentAtMinLot`), le trade est ignoré (message dans le journal).
+6. Une seule position à la fois ; pas de nouvelle entrée après −3 % dans la journée.
+
+Différences voulues avec les autres bots : **24h/24**, positions gardées **plusieurs jours et
+le week-end** (frais de swap, risque d'écart à la réouverture), taux de réussite attendu
+faible (30–40 %) compensé par des gains bien plus gros que les pertes.
+
+Attention à la taille du compte : sur l'or, un stop de 2 ATR H4 représente souvent 40 à 80 $
+au lot minimum 0,01, soit 4 à 8 % d'un compte de 1 000 → trades ignorés. Backtester avec un
+dépôt de 10 000 pour juger la méthode (`presets/TREND_1_reference.set`, mode « OHLC sur M1 »,
+graphique H4, période la plus longue disponible : 2023 → 2026).
+
+---
+
 # EMYO SMC pour TradingView (`EMYO_SMC_TradingView.pine`)
 
 Même méthode qu'EMYO SMC, en **indicateur TradingView** qui ne passe aucun ordre : il dessine
