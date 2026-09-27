@@ -103,7 +103,12 @@ port 9222) qui pilote **TradingView Desktop** depuis l'**application Claude du P
 cette session cloud). Installé dans `C:\Users\YVES OMEGA\claudeverstradingview` (le fork
 Emyo36 n'existait pas → dépôt original). Ajouté dans `%APPDATA%\Claude\claude_desktop_config.json`
 (`mcpServers`, fermer Claude avant d'éditer sinon il écrase le fichier) → statut « En cours ».
-TradingView doit être lancé avec `scripts\launch_tv_debug.bat`. `rules.json` : proposé de mettre
+TradingView doit être lancé en mode débogage. Le script `launch_tv_debug.bat` ne trouve pas
+l'installation de l'utilisateur (paquet MSIX `TradingView.Desktop` dans WindowsApps ; il y a
+aussi la version Store `31178TradingViewInc.TradingView`, et l'icône « TV » était Chrome).
+Commande qui marche (vérifiée : port 9222 répond, TVDesktop/3.4.1) :
+`Stop-Process -Name TradingView -Force -ErrorAction SilentlyContinue` puis
+`$tv = (Get-AppxPackage TradingView.Desktop).InstallLocation; & "$tv\TradingView.exe" --remote-debugging-port=9222`.bat`. `rules.json` : proposé de mettre
 l'or + EMA 50/200 + RSI H4 et nos règles de risque. Claude Code en ligne de commande : échec
 (npm → claude.exe invalide ; installateur officiel bloqué par Cloudflare) → inutile ici.
 Précautions données : ne pas relier le courtier à TradingView, fermer TradingView après usage.
