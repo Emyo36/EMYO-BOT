@@ -1,4 +1,4 @@
-; EMYO SMC - test : risque minimum 1.5 ATR (ecarte les stops trop serres)
+; EMYO SMC - test : correction dans la zone OTE 0.618-0.786 obligatoire
 AlertsOnly=false
 SendPushAlerts=true
 TargetProfitMoney=0
@@ -25,7 +25,7 @@ ImpulseBars=3
 ImpulseAtr=1.5
 MaxBlocksPerSide=3
 RequireImbalance=false
-RequireOte=false
+RequireOte=true
 OteMinLevel=0.618
 OteMaxLevel=0.786
 Confirmation=0
@@ -34,7 +34,7 @@ PivotStrength=2
 ChochMaxBars=15
 EngulfBodyAtr=0.5
 SlBufferAtr=0.2
-MinRiskAtr=1.5
+MinRiskAtr=0.5
 MaxRiskAtr=6.0
 MaxSpreadPercentOfRisk=15
 MaxSlippagePercentOfRisk=10
@@ -51,6 +51,6 @@ EndHour=0
 MaxTradesPerDay=30
 MaxDailyLossPercent=3
 DailyProfitTargetMoney=0
-MagicNumber=360038
+MagicNumber=360037
 AutoCloseOnStop=true
 ShowPanel=true

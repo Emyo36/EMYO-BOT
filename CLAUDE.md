@@ -47,7 +47,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
-## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.03 ; v1.01 compilé OK)
+## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.04 ; v1.03 compilé OK)
 
 Créé le 2026-09-24 à partir d'une vidéo ICT/SMC envoyée par l'utilisateur (transcription) :
 tendance H1+H4 (EMA 50), order block M5 (dernière bougie contraire avant impulsion ≥ 1,5 ATR),
@@ -57,6 +57,19 @@ Magic 360037. v1.02 : option runner. v1.03 : **mode alertes** (`AlertsOnly`) qui
 entrée/SL/TP sur le téléphone (SendNotification) sans trader — réponse à la demande de
 l'utilisateur de recevoir « les points d'entrée » chaque jour (Claude n'a pas accès aux prix
 en direct ni à son MT5). EMYO_BOT reste inchangé pour comparer.
+
+v1.04 (2026-09-27, 2e vidéo SMC de Casper) : options **désactivées par défaut**
+`RequireImbalance` (FVG dans l'impulsion du bloc) et `RequireOte` (correction entre 0,618 et
+0,786 de l'impulsion). Presets `SMC_4_imbalance.set`, `SMC_5_ote.set`. Pas encore compilé.
+
+## Troisième bot : EMYO AMD (`EMYO_AMD.mq5`, v1.00, 2026-09-27)
+
+Même vidéo : Accumulation (range asiatique 20h–0h New York), Manipulation (mèche au-delà du
+range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Distribution
+(retour dans le range + CHoCH M1). SL au-delà de la mèche, TP1 = autre côté du range
+(liquidité), 1 signal par jour. Magic **360039**. Fonctions communes copiées d'EMYO SMC
+(déjà compilées). **Jamais compilé** : demander les erreurs. Presets `AMD_1_reference.set`,
+`AMD_2_objectifs_R.set`. Le script `presets` est régénéré à partir des `input` du code.
 
 ## Version TradingView (`EMYO_SMC_TradingView.pine`, 2026-09-25)
 
@@ -84,6 +97,10 @@ envoie `alert()` avec entrée/SL/TP. Alertes côté serveur TradingView (PC éte
 4. **Démo EMYO SMC** 1 à 2 mois (or + Bitcoin, lot fixe 0,01) après la validation.
    Petit compte réel seulement si la démo confirme les backtests.
 5. ~~Stratégie de la vidéo~~ : faite (EMYO SMC).
+6. **Compte démo créé** par l'utilisateur (2026-09-27). Lancer : or + Bitcoin, EMYO SMC
+   `SMC_1_reference` (360037) et `SMC_2_risque_min_1.5` (360038), lot 0,01.
+7. Backtests 01/01/2025 → 01/09/2026 (or + BTC) : `AMD_1_reference`, puis `SMC_4_imbalance`,
+   `SMC_5_ote`, à comparer à la référence SMC (or +164 $ FP 1,10 ; BTC +38 $ FP 1,04).
 
 ## Journal des résultats
 

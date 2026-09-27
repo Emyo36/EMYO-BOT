@@ -165,6 +165,14 @@ une fois au break-even, son SL suit le prix à `RunnerTrailAtr` × ATR M5 et ell
 SL ou en fin de session. Idée tirée des backtests : les positions encore ouvertes en fin de
 session sont gagnantes en moyenne sur l'or et le Bitcoin.
 
+Options **imbalance et OTE** (v1.04, désactivées par défaut, tirées d'une 2e vidéo SMC) :
+- `RequireImbalance` : l'impulsion qui crée l'order block doit contenir une **imbalance**
+  (FVG : la 1re et la 3e de trois bougies ne se touchent pas). Test : `presets/SMC_4_imbalance.set`.
+- `RequireOte` : l'extrême de la correction doit se trouver dans la **zone OTE** de
+  l'impulsion (`OteMinLevel` 0,618 → `OteMaxLevel` 0,786 ; 100 % = départ du bloc,
+  0 % = extrême de l'impulsion). Test : `presets/SMC_5_ote.set`.
+Chaque filtre réduit le nombre de signaux : on ne le garde que s'il améliore l'or **et** le Bitcoin.
+
 **Mode alertes** (`AlertsOnly = true`, fichier `presets/SMC_alertes_telephone.set`) : le bot
 ne trade pas ; à chaque signal il envoie sur le téléphone (application MetaTrader 5) le sens,
 le prix d'entrée, le SL, les 3 TP et la zone. Réglage une fois pour toutes : sur le téléphone,
@@ -176,6 +184,32 @@ spread (en % du risque), fermeture en fin de session, compteur sur le graphique.
 
 La vidéo annonce 75–80 % de réussite : c'est une affirmation marketing, seul le
 backtest dira ce que donnent ces règles automatisées.
+
+---
+
+# EMYO AMD (`EMYO_AMD.mq5`)
+
+Troisième bot, tiré de la vidéo sur l'**AMD** (Accumulation, Manipulation, Distribution).
+Numéro magique 360039. Mêmes protections que les autres (session américaine, arrêt du jour
+à −3 %, filtre de spread, fermeture en fin de session).
+
+1. **Accumulation** : plus haut et plus bas du **range asiatique**, de 20h à minuit heure de
+   New York (`AsiaStartHour`, `AsiaEndHour` ; mettre `AsiaEndHour = 8` pour inclure Londres).
+2. **Tendance de fond** : H1 + H4 au-dessus / en dessous de l'EMA 50, comme EMYO SMC.
+3. **Manipulation** : pendant la session américaine, une mèche passe **sous** le range
+   (tendance haussière) ou **au-dessus** (tendance baissière) pour chercher les stops. Ce doit
+   être l'extrême de la journée depuis la fin du range, et dater de moins de 30 bougies M1.
+4. **Distribution** : le prix revient dans le range et une bougie M1 clôture au-delà du
+   dernier point haut / bas (CHoCH) → entrée dans le sens de la tendance.
+5. **Ordres** : SL au-delà de la mèche de manipulation. `TargetMode` :
+   - **liquidité** (défaut) : TP1 sur l'autre côté du range asiatique, TP2 et TP3 un et deux R
+     plus loin. Signal ignoré si l'autre côté est à moins de 1R (`MinFirstTargetRR`) ou a déjà
+     été pris dans la journée ;
+   - **R** : 1R / 2R / 3R comme EMYO SMC (`presets/AMD_2_objectifs_R.set`).
+   Break-even à 1R, **un seul signal par jour** (`MaxSignalsPerDay`).
+
+À tester sur les mêmes 20 mois qu'EMYO SMC (or + Bitcoin, `presets/AMD_1_reference.set`).
+Jamais compilé au moment de sa création : envoyer les erreurs éventuelles de MetaEditor.
 
 ---
 

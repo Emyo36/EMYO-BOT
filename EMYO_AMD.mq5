@@ -1,18 +1,19 @@
 //+------------------------------------------------------------------+
-//|          EMYO SMC - ORDER BLOCK + CONFIRMATION D'ENTRÉE           |
-//|  Tendance H4/H1, order block M5, confirmation M1 (CHoCH /         |
-//|  bougie englobante). Or, Bitcoin, NASDAQ - session américaine.    |
+//|          EMYO AMD - ACCUMULATION / MANIPULATION / DISTRIBUTION    |
+//|  Accumulation = range asiatique ; manipulation = le prix casse    |
+//|  un côté du range contre la tendance (chasse aux stops) ;         |
+//|  distribution = retour dans le range + CHoCH M1 dans le sens de   |
+//|  la tendance, objectif sur la liquidité de l'autre côté.          |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.04"
+#property version   "1.00"
 
 #include <Trade\Trade.mqh>
 
-enum ENUM_CONFIRMATION
+enum ENUM_TARGET_MODE
 {
-   CONFIRM_CHOCH     = 0,  // CHoCH : cassure du dernier point haut / bas (la plus forte)
-   CONFIRM_ENGULFING = 1,  // Bougie englobante sur la zone
-   CONFIRM_EITHER    = 2   // L'une ou l'autre
+   TARGET_LIQUIDITY = 0,  // 1er TP sur l'autre côté du range asiatique (liquidité)
+   TARGET_RR        = 1   // TP à 1R / 2R / 3R comme EMYO SMC
 };
 
 enum ENUM_SESSION_MODE
@@ -34,16 +35,17 @@ input double RiskPercent        = 0;     // % du solde risqué par position (si 
 input double Lots               = 0.01;  // Lot fixe (si TargetProfitMoney = 0 et RiskPercent = 0)
 input double MaxLots            = 1.0;   // Lot maximum par position
 
-input group "Positions"
+input group "Positions et objectifs"
 input int    TradesPerSignal    = 3;     // Positions ouvertes ensemble à chaque signal
-input double FirstTargetRR      = 1.0;   // TP de la 1re position, en multiple du risque (1 = 1R)
-input double TargetStepRR       = 1.0;   // Écart entre les TP : 1R / 2R / 3R...
-input int    MaxOpenPositions   = 6;     // Positions ouvertes en même temps au maximum (ce symbole)
-input bool   AddOnlyWhenProtected = true; // Nouveau signal seulement si les positions ouvertes sont au break-even
+input ENUM_TARGET_MODE TargetMode = TARGET_LIQUIDITY;
+input double MinFirstTargetRR   = 1.0;   // Mode liquidité : l'autre côté du range doit être à au moins N x le risque
+input double FirstTargetRR      = 1.0;   // Mode R : TP de la 1re position (1 = 1R)
+input double TargetStepRR       = 1.0;   // Écart entre les TP suivants, en multiple du risque
+input int    MaxOpenPositions   = 3;     // Positions ouvertes en même temps au maximum (ce symbole)
 input double BreakEvenRR        = 1.0;   // Passage au break-even quand le gain atteint ce multiple du risque (0 = off)
 input double BreakEvenLockRR    = 0.1;   // Gain sécurisé au break-even (en multiple du risque)
 input bool   UseRunner          = false; // Dernière position sans TP : elle suit le mouvement (trailing)
-input double RunnerTrailAtr     = 2.0;   // Distance du trailing du runner (en ATR de l'unité de temps des blocs)
+input double RunnerTrailAtr     = 2.0;   // Distance du trailing du runner (en ATR M5)
 
 input group "Tendance de fond"
 input ENUM_TIMEFRAMES BiasTimeframe1 = PERIOD_H1;  // 1re unité de temps de tendance
@@ -51,34 +53,24 @@ input ENUM_TIMEFRAMES BiasTimeframe2 = PERIOD_H4;  // 2e unité de temps de tend
 input bool            UseBiasTimeframe2 = true;    // Exiger aussi la 2e unité de temps
 input int             BiasEmaPeriod  = 50;         // EMA de tendance (prix au-dessus = haussier)
 
-input group "Order blocks (M5)"
-input ENUM_TIMEFRAMES SetupTimeframe = PERIOD_M5;  // Unité de temps des order blocks
-input int    ObLookback         = 100;   // Bougies analysées pour trouver les order blocks
-input int    ImpulseBars        = 3;     // L'impulsion doit partir dans ces N bougies
-input double ImpulseAtr         = 1.5;   // Taille minimale de l'impulsion (en ATR de l'unité de temps)
-input int    MaxBlocksPerSide   = 3;     // Order blocks récents suivis dans chaque sens
-input bool   RequireImbalance   = false; // Exiger une imbalance (FVG) dans l'impulsion du bloc
+input group "Accumulation (range asiatique, heure de New York)"
+input int    AsiaStartHour      = 20;    // Début du range (la veille au soir)
+input int    AsiaEndHour        = 0;     // Fin du range (0 = minuit ; 8 = inclure Londres)
+input int    MinAsiaBars        = 60;    // Bougies M1 minimum dans le range (sinon jour ignoré)
 
-input group "Zone OTE (Fibonacci)"
-input bool   RequireOte         = false; // Exiger que la correction atteigne la zone OTE de l'impulsion
-input double OteMinLevel        = 0.618; // Début de la zone OTE (retracement)
-input double OteMaxLevel        = 0.786; // Fin de la zone OTE (retracement)
-
-input group "Confirmation d'entrée (M1)"
-input ENUM_CONFIRMATION Confirmation = CONFIRM_CHOCH;
-input int    ConfirmLookback    = 20;    // Bougies M1 où chercher le contact avec la zone
+input group "Manipulation + confirmation (M1)"
+input int    ConfirmLookback    = 30;    // La chasse aux stops doit dater de moins de N bougies M1
 input int    PivotStrength      = 2;     // Bougies de chaque côté pour valider un point haut / bas
-input int    ChochMaxBars       = 15;    // Distance max. entre le point bas et le point haut à casser
-input double EngulfBodyAtr      = 0.5;   // Corps minimum de la bougie englobante (en ATR M1)
-input double SlBufferAtr        = 0.2;   // Marge sous le plus bas / au-dessus du plus haut (ATR M1)
-input double MinRiskAtr         = 0.5;   // Risque minimum (en ATR M1) : évite les SL trop serrés
-input double MaxRiskAtr         = 6.0;   // Risque maximum (en ATR M1) : évite les SL trop larges
+input int    ChochMaxBars       = 15;    // Distance max. entre l'extrême et le point à casser
+input double SlBufferAtr        = 0.2;   // Marge au-delà de la mèche de manipulation (ATR M1)
+input double MinRiskAtr         = 0.5;   // Risque minimum (en ATR M1)
+input double MaxRiskAtr         = 6.0;   // Risque maximum (en ATR M1)
 
 input group "Filtres"
 input double MaxSpreadPercentOfRisk = 15; // Spread max. en % du risque (0 = off)
 input double MaxSlippagePercentOfRisk = 10; // Glissement max. accepté en % du risque
 
-input group "Session de trading"
+input group "Session de trading (entrées)"
 input ENUM_SESSION_MODE SessionMode = SESSION_NEW_YORK;
 input int    NyStartHour        = 9;     // Début, heure de New York
 input int    NyStartMinute      = 30;
@@ -91,44 +83,42 @@ input int    StartHour          = 0;     // Mode serveur : heure de début
 input int    EndHour            = 0;     // Mode serveur : heure de fin (exclue)
 
 input group "Sécurité"
-input int    MaxTradesPerDay    = 30;    // Positions ouvertes par jour au maximum (0 = illimité)
+input int    MaxSignalsPerDay   = 1;     // Signaux par jour au maximum (1 AMD par jour)
 input double MaxDailyLossPercent = 3;    // Arrêt du jour après cette perte en % (0 = off)
-input double DailyProfitTargetMoney = 0; // Arrêt du jour une fois ce gain atteint (0 = off)
-input ulong  MagicNumber        = 360037;
+input ulong  MagicNumber        = 360039;
 input bool   AutoCloseOnStop    = true;  // Fermer les positions quand le bot est retiré
 input bool   ShowPanel          = true;  // Afficher le compteur de gains sur le graphique
 
 //---------------------- VARIABLES GLOBALES --------------------------
-struct OrderBlock
-{
-   datetime time;     // heure de la bougie qui forme le bloc (identifiant)
-   double   top;
-   double   bottom;
-   int      dir;      // +1 haussier (zone d'achat), -1 baissier (zone de vente)
-   double   extreme;  // extrême atteint par l'impulsion (plus haut / plus bas) : 100 % de l'OTE
-};
+CTrade   trade;
+int      biasHandle1 = INVALID_HANDLE;
+int      biasHandle2 = INVALID_HANDLE;
+int      atrM1Handle = INVALID_HANDLE;
+int      atrSetupHandle = INVALID_HANDLE;   // ATR M5 (trailing du runner)
+datetime lastBarTime = 0;
 
-CTrade     trade;
-int        biasHandle1 = INVALID_HANDLE;
-int        biasHandle2 = INVALID_HANDLE;
-int        atrM1Handle = INVALID_HANDLE;
-int        atrSetupHandle = INVALID_HANDLE;
-datetime   lastBarTime = 0;
-OrderBlock blocks[];
-datetime   usedBlocks[];  // blocs déjà tradés : un seul signal par bloc
+datetime asiaDay    = 0;      // jour (New York, minuit) du range calculé
+bool     asiaValid  = false;
+double   asiaHigh   = 0;
+double   asiaLow    = 0;
+datetime asiaEndSrv = 0;      // fin du range, heure serveur
+double   postHigh   = 0;      // plus haut / plus bas depuis la fin du range
+double   postLow    = 0;
+datetime signalDay  = 0;
+int      signalsToday = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(TradesPerSignal < 1 || FirstTargetRR <= 0 || TargetStepRR < 0 || MaxOpenPositions < 1 ||
-      BreakEvenRR < 0 || BreakEvenLockRR < 0 || RunnerTrailAtr <= 0 || BiasEmaPeriod <= 0 ||
-      ObLookback < 10 || ImpulseBars < 1 || ImpulseAtr <= 0 || MaxBlocksPerSide < 1 ||
+   if(TradesPerSignal < 1 || MinFirstTargetRR < 0 || FirstTargetRR <= 0 || TargetStepRR < 0 ||
+      MaxOpenPositions < 1 || BreakEvenRR < 0 || BreakEvenLockRR < 0 || RunnerTrailAtr <= 0 ||
+      BiasEmaPeriod <= 0 || AsiaStartHour < 0 || AsiaStartHour > 23 || AsiaEndHour < 0 ||
+      AsiaEndHour > 23 || AsiaStartHour == AsiaEndHour || MinAsiaBars < 1 ||
       ConfirmLookback < 5 || PivotStrength < 1 || ChochMaxBars < 2 ||
-      EngulfBodyAtr < 0 || OteMinLevel < 0 || OteMaxLevel <= OteMinLevel ||
       SlBufferAtr < 0 || MinRiskAtr < 0 || MaxRiskAtr <= MinRiskAtr ||
       NyStartHour < 0 || NyStartHour > 23 || NyEndHour < 0 || NyEndHour > 23 ||
       NyStartMinute < 0 || NyStartMinute > 59 || NyEndMinute < 0 || NyEndMinute > 59 ||
-      StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
+      StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 || MaxSignalsPerDay < 1 ||
       Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxProfitAtMinLot < 0 || MaxLots <= 0)
    {
       Print("Erreur : paramètres invalides");
@@ -138,7 +128,7 @@ int OnInit()
    biasHandle1    = iMA(_Symbol, BiasTimeframe1, BiasEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    biasHandle2    = iMA(_Symbol, BiasTimeframe2, BiasEmaPeriod, 0, MODE_EMA, PRICE_CLOSE);
    atrM1Handle    = iATR(_Symbol, PERIOD_M1, 14);
-   atrSetupHandle = iATR(_Symbol, SetupTimeframe, 14);
+   atrSetupHandle = iATR(_Symbol, PERIOD_M5, 14);
 
    if(biasHandle1 == INVALID_HANDLE || biasHandle2 == INVALID_HANDLE ||
       atrM1Handle == INVALID_HANDLE || atrSetupHandle == INVALID_HANDLE)
@@ -150,7 +140,7 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   Print("EMYO SMC lancé sur ", _Symbol,
+   Print("EMYO AMD lancé sur ", _Symbol,
          " | heure de New York : ", TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
          " | session ", (IsTradingHour() ? "ouverte" : "fermée"));
    UpdatePanel();
@@ -172,7 +162,7 @@ void OnDeinit(const int reason)
    if(atrSetupHandle != INVALID_HANDLE) IndicatorRelease(atrSetupHandle);
 
    Comment("");
-   Print("EMYO SMC arrêté");
+   Print("EMYO AMD arrêté");
 }
 
 //+----------------------- SESSION / HEURES -------------------------+
@@ -457,139 +447,7 @@ int GetBias()
    return 0;
 }
 
-//+----------------------- ORDER BLOCKS -----------------------------+
-bool IsBlockUsed(datetime t)
-{
-   for(int i = 0; i < ArraySize(usedBlocks); i++)
-      if(usedBlocks[i] == t)
-         return true;
-   return false;
-}
-
-void MarkBlockUsed(datetime t)
-{
-   int n = ArraySize(usedBlocks);
-   if(n >= 200)                          // on garde les 200 derniers
-   {
-      ArrayRemove(usedBlocks, 0, 1);
-      n--;
-   }
-   ArrayResize(usedBlocks, n + 1);
-   usedBlocks[n] = t;
-}
-
-// Imbalance (FVG) dans l'impulsion : 3 bougies consécutives entre le bloc (i) et la fin
-// de l'impulsion (i - ImpulseBars) dont la 1re et la 3e ne se touchent pas.
-bool HasImbalance(const double &high[], const double &low[], int i, int dir)
-{
-   for(int o = i; o - 2 >= i - ImpulseBars && o - 2 >= 1; o--)
-   {
-      if(dir == 1 && low[o - 2] > high[o])
-         return true;
-      if(dir == -1 && high[o - 2] < low[o])
-         return true;
-   }
-   return false;
-}
-
-// Recherche des order blocks sur l'unité de temps des setups.
-// Bloc haussier : dernière bougie baissière avant une impulsion haussière
-// qui clôture au-dessus de son plus haut d'au moins ImpulseAtr x ATR.
-// Le bloc est invalidé si une bougie a clôturé sous son plus bas depuis.
-// (Symétrique pour les blocs baissiers.)
-void FindOrderBlocks()
-{
-   ArrayResize(blocks, 0);
-
-   int bars = ObLookback + ImpulseBars + 2;
-   double open[], high[], low[], close[];
-   datetime time[];
-   ArraySetAsSeries(open, true);
-   ArraySetAsSeries(high, true);
-   ArraySetAsSeries(low, true);
-   ArraySetAsSeries(close, true);
-   ArraySetAsSeries(time, true);
-
-   if(CopyOpen (_Symbol, SetupTimeframe, 0, bars, open)  < bars ||
-      CopyHigh (_Symbol, SetupTimeframe, 0, bars, high)  < bars ||
-      CopyLow  (_Symbol, SetupTimeframe, 0, bars, low)   < bars ||
-      CopyClose(_Symbol, SetupTimeframe, 0, bars, close) < bars ||
-      CopyTime (_Symbol, SetupTimeframe, 0, bars, time)  < bars)
-      return;
-
-   double atr = LastValue(atrSetupHandle);
-   if(atr <= 0)
-      return;
-
-   int bullCount = 0, bearCount = 0;
-
-   // Du plus récent au plus ancien ; bougie i = bloc, bougies i-1 ... i-ImpulseBars = impulsion
-   for(int i = ImpulseBars + 1; i <= ObLookback; i++)
-   {
-      if(bullCount >= MaxBlocksPerSide && bearCount >= MaxBlocksPerSide)
-         break;
-
-      double maxClose = close[i - 1];
-      double minClose = close[i - 1];
-      for(int k = 2; k <= ImpulseBars; k++)
-      {
-         maxClose = MathMax(maxClose, close[i - k]);
-         minClose = MathMin(minClose, close[i - k]);
-      }
-
-      // Bloc haussier
-      if(bullCount < MaxBlocksPerSide && close[i] < open[i] &&
-         maxClose >= high[i] + ImpulseAtr * atr)
-      {
-         bool valid = !RequireImbalance || HasImbalance(high, low, i, 1);
-         double extreme = high[i];
-         for(int k = 1; k < i && valid; k++)
-         {
-            if(close[k] < low[i]) valid = false;
-            extreme = MathMax(extreme, high[k]);
-         }
-
-         if(valid)
-         {
-            int n = ArraySize(blocks);
-            ArrayResize(blocks, n + 1);
-            blocks[n].time    = time[i];
-            blocks[n].top     = high[i];
-            blocks[n].bottom  = low[i];
-            blocks[n].dir     = 1;
-            blocks[n].extreme = extreme;
-            bullCount++;
-         }
-      }
-
-      // Bloc baissier
-      if(bearCount < MaxBlocksPerSide && close[i] > open[i] &&
-         minClose <= low[i] - ImpulseAtr * atr)
-      {
-         bool valid = !RequireImbalance || HasImbalance(high, low, i, -1);
-         double extreme = low[i];
-         for(int k = 1; k < i && valid; k++)
-         {
-            if(close[k] > high[i]) valid = false;
-            extreme = MathMin(extreme, low[k]);
-         }
-
-         if(valid)
-         {
-            int n = ArraySize(blocks);
-            ArrayResize(blocks, n + 1);
-            blocks[n].time    = time[i];
-            blocks[n].top     = high[i];
-            blocks[n].bottom  = low[i];
-            blocks[n].dir     = -1;
-            blocks[n].extreme = extreme;
-            bearCount++;
-         }
-      }
-   }
-}
-
-//+----------------------- CONFIRMATIONS M1 -------------------------+
+//+----------------------- CONFIRMATION M1 --------------------------+
 // Point haut confirmé : plus haut que les PivotStrength bougies de chaque côté
 bool IsPivotHigh(const double &high[], int j, int size)
 {
@@ -631,211 +489,7 @@ bool InOteZone(const OrderBlock &ob, double price)
    return retracement >= OteMinLevel && retracement <= OteMaxLevel;
 }
 
-// Cherche une confirmation d'achat (dir = 1) ou de vente (dir = -1) sur la zone.
-// Renvoie vrai et remplit 'stopPrice' (niveau d'invalidation du trade).
-bool CheckConfirmation(const OrderBlock &ob, const datetime &time[], const double &open[],
-                       const double &high[], const double &low[], const double &close[],
-                       int size, double atr, double &stopPrice)
-{
-   int L = ConfirmLookback;
-
-   // Le retour sur la zone doit avoir lieu après l'impulsion qui a créé le bloc
-   datetime impulseEnd = ob.time + (ImpulseBars + 1) * PeriodSeconds(SetupTimeframe);
-
-   if(ob.dir == 1)
-   {
-      // Point le plus bas de la correction (avant la bougie de confirmation)
-      int lowIdx = ArrayMinimum(low, 2, L - 1);
-      if(lowIdx < 2 || time[lowIdx] < impulseEnd)
-         return false;
-
-      // Le prix doit avoir touché la zone, sans clôturer sous le bloc
-      if(low[lowIdx] > ob.top)
-         return false;
-      for(int k = 1; k <= lowIdx; k++)
-         if(close[k] < ob.bottom)
-            return false;
-      if(!InOteZone(ob, low[lowIdx]))
-         return false;
-
-      // 1) CHoCH : clôture au-dessus du dernier point haut qui a précédé ce point bas
-      if(Confirmation == CONFIRM_CHOCH || Confirmation == CONFIRM_EITHER)
-      {
-         for(int j = lowIdx + 1; j <= lowIdx + ChochMaxBars && j + PivotStrength < size; j++)
-         {
-            if(!IsPivotHigh(high, j, size))
-               continue;
-
-            double level = high[j];
-            bool alreadyBroken = false;
-            for(int k = 2; k < lowIdx; k++)
-               if(close[k] > level) { alreadyBroken = true; break; }
-
-            if(!alreadyBroken && close[1] > level)
-            {
-               stopPrice = low[lowIdx] - SlBufferAtr * atr;
-               return true;
-            }
-            break;   // seul le point haut le plus proche compte
-         }
-      }
-
-      // 2) Bougie englobante haussière qui clôture dans la moitié haute de la zone ou au-dessus
-      if(Confirmation == CONFIRM_ENGULFING || Confirmation == CONFIRM_EITHER)
-      {
-         if(close[1] > open[1] && close[2] < open[2] &&
-            close[1] >= open[2] && open[1] <= close[2] &&
-            close[1] - open[1] >= EngulfBodyAtr * atr &&
-            MathMin(low[1], low[2]) <= ob.top &&
-            close[1] > (ob.top + ob.bottom) / 2.0)
-         {
-            stopPrice = MathMin(low[1], low[2]) - SlBufferAtr * atr;
-            return true;
-         }
-      }
-      return false;
-   }
-
-   // Vente : symétrique
-   int highIdx = ArrayMaximum(high, 2, L - 1);
-   if(highIdx < 2 || time[highIdx] < impulseEnd)
-      return false;
-
-   if(high[highIdx] < ob.bottom)
-      return false;
-   for(int k = 1; k <= highIdx; k++)
-      if(close[k] > ob.top)
-         return false;
-   if(!InOteZone(ob, high[highIdx]))
-      return false;
-
-   if(Confirmation == CONFIRM_CHOCH || Confirmation == CONFIRM_EITHER)
-   {
-      for(int j = highIdx + 1; j <= highIdx + ChochMaxBars && j + PivotStrength < size; j++)
-      {
-         if(!IsPivotLow(low, j, size))
-            continue;
-
-         double level = low[j];
-         bool alreadyBroken = false;
-         for(int k = 2; k < highIdx; k++)
-            if(close[k] < level) { alreadyBroken = true; break; }
-
-         if(!alreadyBroken && close[1] < level)
-         {
-            stopPrice = high[highIdx] + SlBufferAtr * atr;
-            return true;
-         }
-         break;
-      }
-   }
-
-   if(Confirmation == CONFIRM_ENGULFING || Confirmation == CONFIRM_EITHER)
-   {
-      if(close[1] < open[1] && close[2] > open[2] &&
-         close[1] <= open[2] && open[1] >= close[2] &&
-         open[1] - close[1] >= EngulfBodyAtr * atr &&
-         MathMax(high[1], high[2]) >= ob.bottom &&
-         close[1] < (ob.top + ob.bottom) / 2.0)
-      {
-         stopPrice = MathMax(high[1], high[2]) + SlBufferAtr * atr;
-         return true;
-      }
-   }
-   return false;
-}
-
-//+----------------------- ALERTES ----------------------------------+
-// Message du signal : entrée, SL et TP de chaque position.
-// Envoyé sur le téléphone (application MetaTrader 5) et affiché sur le PC.
-void SendSignalAlert(int dir, double entry, double stopPrice, int count, const OrderBlock &ob)
-{
-   double risk = (dir == 1) ? entry - stopPrice : stopPrice - entry;
-
-   string msg = "EMYO SMC " + _Symbol + " : " + (dir == 1 ? "ACHAT" : "VENTE") +
-                " vers " + DoubleToString(entry, _Digits) +
-                " | SL " + DoubleToString(stopPrice, _Digits);
-
-   for(int k = 0; k < count; k++)
-   {
-      double rr = FirstTargetRR + k * TargetStepRR;
-      bool runner = UseRunner && count > 1 && k == count - 1;
-      if(runner)
-         msg += " | TP" + IntegerToString(k + 1) + " libre (trailing)";
-      else
-         msg += " | TP" + IntegerToString(k + 1) + " " +
-                DoubleToString((dir == 1) ? entry + rr * risk : entry - rr * risk, _Digits);
-   }
-
-   msg += " | zone " + DoubleToString(ob.bottom, _Digits) + "-" + DoubleToString(ob.top, _Digits);
-
-   Print(msg);
-   if(MQLInfoInteger(MQL_TESTER))
-      return;                              // pas d'alertes pendant les backtests
-
-   Alert(msg);
-   if(SendPushAlerts && !SendNotification(msg))
-      Print("Notification non envoyée : vérifier le MetaQuotes ID (Outils > Options > Notifications)");
-}
-
-//+----------------------- ORDRES -----------------------------------+
-// Ouvre TradesPerSignal positions avec le même SL et des TP à 1R, 2R, 3R...
-// Renvoie le nombre de positions ouvertes.
-int OpenBasket(int dir, double stopPrice, int count)
-{
-   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double price = (dir == 1) ? ask : bid;
-   double risk  = (dir == 1) ? price - stopPrice : stopPrice - price;
-
-   if(risk <= 0)
-      return 0;
-
-   if(MaxSpreadPercentOfRisk > 0 && ask - bid > risk * MaxSpreadPercentOfRisk / 100.0)
-   {
-      Print("Spread trop élevé : ", DoubleToString((ask - bid) / risk * 100.0, 1), " % du risque");
-      return 0;
-   }
-
-   double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   if(risk < minDist)
-      return 0;
-
-   trade.SetDeviationInPoints((ulong)MathMax(1, risk * MaxSlippagePercentOfRisk / 100.0 / _Point));
-
-   string currency = AccountInfoString(ACCOUNT_CURRENCY);
-   double sl = NormalizeDouble(stopPrice, _Digits);
-   int opened = 0;
-
-   for(int k = 0; k < count; k++)
-   {
-      double rr         = FirstTargetRR + k * TargetStepRR;
-      double tpDistance = rr * risk;
-      double lots       = CalculateLots(risk, tpDistance);
-      if(lots <= 0)
-         continue;
-
-      // Runner : la dernière position du panier n'a pas de TP
-      bool runner = UseRunner && count > 1 && k == count - 1;
-      double tp = runner ? 0 : NormalizeDouble((dir == 1) ? price + tpDistance : price - tpDistance, _Digits);
-      string info = (runner ? " | RUNNER sans TP" : " | TP " + DoubleToString(rr, 1) + "R") +
-                    " | Lots=" + DoubleToString(lots, 2) +
-                    " | Gain visé=" + DoubleToString(MoneyPerLot(tpDistance) * lots, 2) + " " + currency +
-                    " Perte max=" + DoubleToString(MoneyPerLot(risk) * lots, 2) + " " + currency;
-
-      bool ok = (dir == 1) ? trade.Buy(lots, _Symbol, price, sl, tp)
-                           : trade.Sell(lots, _Symbol, price, sl, tp);
-      if(ok)
-      {
-         opened++;
-         Print((dir == 1 ? "BUY" : "SELL"), " exécuté", info);
-      }
-      else
-         Print((dir == 1 ? "BUY" : "SELL"), " refusé : ", trade.ResultRetcodeDescription());
-   }
-   return opened;
-}
-
+//+----------------------- GESTION ----------------------------------+
 // Break-even : quand le gain atteint BreakEvenRR fois le risque initial,
 // le SL passe au prix d'entrée + BreakEvenLockRR fois le risque.
 // Runner (position sans TP) : une fois protégé, son SL suit le prix à
@@ -904,6 +558,243 @@ void ManagePositions()
    }
 }
 
+//+----------------------- RANGE ASIATIQUE --------------------------+
+// Calcule le range d'accumulation du jour (heure de New York) puis le plus haut
+// et le plus bas atteints depuis sa fin (bougies M1 clôturées).
+// Renvoie faux tant que le range du jour n'est pas terminé ou pas exploitable.
+bool UpdateAsiaRange()
+{
+   datetime nyNow = NewYorkTime();
+   datetime nyDay = nyNow - (nyNow % 86400);
+   long     shift = (long)(TimeCurrent() - nyNow);   // heure serveur - heure de New York
+
+   datetime startNy = nyDay + AsiaStartHour * 3600 - (AsiaStartHour > AsiaEndHour ? 86400 : 0);
+   datetime endNy   = nyDay + AsiaEndHour * 3600;
+   if(nyNow < endNy)
+      return false;                                  // range du jour pas encore terminé
+
+   if(nyDay != asiaDay)
+   {
+      MqlRates rates[];
+      int n = CopyRates(_Symbol, PERIOD_M1, (datetime)(startNy + shift), (datetime)(endNy + shift - 1), rates);
+      if(n < 0)
+         return false;                               // historique pas encore chargé : on réessaiera
+
+      asiaDay    = nyDay;
+      asiaEndSrv = (datetime)(endNy + shift);
+      asiaValid  = (n >= MinAsiaBars);
+      if(asiaValid)
+      {
+         asiaHigh = rates[0].high;
+         asiaLow  = rates[0].low;
+         for(int i = 1; i < n; i++)
+         {
+            asiaHigh = MathMax(asiaHigh, rates[i].high);
+            asiaLow  = MathMin(asiaLow,  rates[i].low);
+         }
+      }
+   }
+
+   if(!asiaValid)
+      return false;
+
+   datetime lastClosed = iTime(_Symbol, PERIOD_M1, 1);
+   if(lastClosed < asiaEndSrv)
+      return false;
+
+   MqlRates post[];
+   int m = CopyRates(_Symbol, PERIOD_M1, asiaEndSrv, lastClosed, post);
+   if(m <= 0)
+      return false;
+
+   postHigh = post[0].high;
+   postLow  = post[0].low;
+   for(int i = 1; i < m; i++)
+   {
+      postHigh = MathMax(postHigh, post[i].high);
+      postLow  = MathMin(postLow,  post[i].low);
+   }
+   return true;
+}
+
+//+----------------------- SIGNAL AMD -------------------------------+
+// Achat (dir = 1) : dans les ConfirmLookback dernières bougies, une mèche est passée sous
+// le range asiatique (manipulation) et c'est le plus bas depuis la fin du range ; le prix
+// est revenu dans le range et la bougie clôture au-dessus du dernier point haut qui a
+// précédé ce plus bas (CHoCH). Vente : symétrique.
+// Remplit 'stopPrice' (au-delà de la mèche) et 'target' (liquidité de l'autre côté).
+bool CheckAmdSignal(int dir, const datetime &time[], const double &high[], const double &low[],
+                    const double &close[], int size, double atr, double &stopPrice, double &target)
+{
+   int L = ConfirmLookback;
+
+   if(dir == 1)
+   {
+      int lowIdx = ArrayMinimum(low, 2, L - 1);
+      if(lowIdx < 2 || time[lowIdx] < asiaEndSrv)
+         return false;
+      if(low[lowIdx] >= asiaLow || low[lowIdx] > postLow)
+         return false;                               // pas de chasse aux stops sous le range
+      if(close[1] <= asiaLow)
+         return false;                               // pas encore revenu dans le range
+      if(TargetMode == TARGET_LIQUIDITY && postHigh >= asiaHigh)
+         return false;                               // la liquidité visée a déjà été prise
+
+      for(int j = lowIdx + 1; j <= lowIdx + ChochMaxBars && j + PivotStrength < size; j++)
+      {
+         if(!IsPivotHigh(high, j, size))
+            continue;
+
+         double level = high[j];
+         bool alreadyBroken = false;
+         for(int k = 2; k < lowIdx; k++)
+            if(close[k] > level) { alreadyBroken = true; break; }
+
+         if(!alreadyBroken && close[1] > level)
+         {
+            stopPrice = low[lowIdx] - SlBufferAtr * atr;
+            target    = asiaHigh;
+            return true;
+         }
+         break;   // seul le point haut le plus proche compte
+      }
+      return false;
+   }
+
+   int highIdx = ArrayMaximum(high, 2, L - 1);
+   if(highIdx < 2 || time[highIdx] < asiaEndSrv)
+      return false;
+   if(high[highIdx] <= asiaHigh || high[highIdx] < postHigh)
+      return false;
+   if(close[1] >= asiaHigh)
+      return false;
+   if(TargetMode == TARGET_LIQUIDITY && postLow <= asiaLow)
+      return false;
+
+   for(int j = highIdx + 1; j <= highIdx + ChochMaxBars && j + PivotStrength < size; j++)
+   {
+      if(!IsPivotLow(low, j, size))
+         continue;
+
+      double level = low[j];
+      bool alreadyBroken = false;
+      for(int k = 2; k < highIdx; k++)
+         if(close[k] < level) { alreadyBroken = true; break; }
+
+      if(!alreadyBroken && close[1] < level)
+      {
+         stopPrice = high[highIdx] + SlBufferAtr * atr;
+         target    = asiaLow;
+         return true;
+      }
+      break;
+   }
+   return false;
+}
+
+// Distance du TP de la k-ième position (0 = première)
+double TargetDistance(int k, int dir, double price, double risk, double target)
+{
+   if(TargetMode == TARGET_LIQUIDITY)
+   {
+      double first = (dir == 1) ? target - price : price - target;
+      return first + k * TargetStepRR * risk;
+   }
+   return (FirstTargetRR + k * TargetStepRR) * risk;
+}
+
+//+----------------------- ALERTES ----------------------------------+
+void SendSignalAlert(int dir, double entry, double stopPrice, double target, int count)
+{
+   double risk = (dir == 1) ? entry - stopPrice : stopPrice - entry;
+
+   string msg = "EMYO AMD " + _Symbol + " : " + (dir == 1 ? "ACHAT" : "VENTE") +
+                " vers " + DoubleToString(entry, _Digits) +
+                " | SL " + DoubleToString(stopPrice, _Digits);
+
+   for(int k = 0; k < count; k++)
+   {
+      bool runner = UseRunner && count > 1 && k == count - 1;
+      if(runner)
+         msg += " | TP" + IntegerToString(k + 1) + " libre (trailing)";
+      else
+      {
+         double dist = TargetDistance(k, dir, entry, risk, target);
+         msg += " | TP" + IntegerToString(k + 1) + " " +
+                DoubleToString((dir == 1) ? entry + dist : entry - dist, _Digits);
+      }
+   }
+
+   msg += " | range Asie " + DoubleToString(asiaLow, _Digits) + "-" + DoubleToString(asiaHigh, _Digits);
+
+   Print(msg);
+   if(MQLInfoInteger(MQL_TESTER))
+      return;                              // pas d'alertes pendant les backtests
+
+   Alert(msg);
+   if(SendPushAlerts && !SendNotification(msg))
+      Print("Notification non envoyée : vérifier le MetaQuotes ID (Outils > Options > Notifications)");
+}
+
+//+----------------------- ORDRES -----------------------------------+
+// Ouvre 'count' positions avec le même SL ; TP selon TargetMode. Renvoie le nombre ouvert.
+int OpenBasket(int dir, double stopPrice, double target, int count)
+{
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double price = (dir == 1) ? ask : bid;
+   double risk  = (dir == 1) ? price - stopPrice : stopPrice - price;
+
+   if(risk <= 0)
+      return 0;
+
+   if(MaxSpreadPercentOfRisk > 0 && ask - bid > risk * MaxSpreadPercentOfRisk / 100.0)
+   {
+      Print("Spread trop élevé : ", DoubleToString((ask - bid) / risk * 100.0, 1), " % du risque");
+      return 0;
+   }
+
+   double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+   if(risk < minDist)
+      return 0;
+
+   trade.SetDeviationInPoints((ulong)MathMax(1, risk * MaxSlippagePercentOfRisk / 100.0 / _Point));
+
+   string currency = AccountInfoString(ACCOUNT_CURRENCY);
+   double sl = NormalizeDouble(stopPrice, _Digits);
+   int opened = 0;
+
+   for(int k = 0; k < count; k++)
+   {
+      double tpDistance = TargetDistance(k, dir, price, risk, target);
+      if(tpDistance <= minDist)
+         continue;
+
+      double lots = CalculateLots(risk, tpDistance);
+      if(lots <= 0)
+         continue;
+
+      // Runner : la dernière position du panier n'a pas de TP
+      bool runner = UseRunner && count > 1 && k == count - 1;
+      double tp = runner ? 0 : NormalizeDouble((dir == 1) ? price + tpDistance : price - tpDistance, _Digits);
+      string info = (runner ? " | RUNNER sans TP" : " | TP à " + DoubleToString(tpDistance / risk, 1) + "R") +
+                    " | Lots=" + DoubleToString(lots, 2) +
+                    " | Gain visé=" + DoubleToString(MoneyPerLot(tpDistance) * lots, 2) + " " + currency +
+                    " Perte max=" + DoubleToString(MoneyPerLot(risk) * lots, 2) + " " + currency;
+
+      bool ok = (dir == 1) ? trade.Buy(lots, _Symbol, price, sl, tp)
+                           : trade.Sell(lots, _Symbol, price, sl, tp);
+      if(ok)
+      {
+         opened++;
+         Print((dir == 1 ? "BUY" : "SELL"), " exécuté", info);
+      }
+      else
+         Print((dir == 1 ? "BUY" : "SELL"), " refusé : ", trade.ResultRetcodeDescription());
+   }
+   return opened;
+}
+
 //+----------------------- AFFICHAGE --------------------------------+
 void UpdatePanel()
 {
@@ -918,12 +809,14 @@ void UpdatePanel()
    int openCount = CountOpenPositions(direction);
    int bias      = GetBias();
    string currency = AccountInfoString(ACCOUNT_CURRENCY);
+   string range = asiaValid ? DoubleToString(asiaLow, _Digits) + " - " + DoubleToString(asiaHigh, _Digits)
+                            : "pas encore disponible";
 
-   Comment("EMYO SMC  |  ", _Symbol, (AlertsOnly ? "  |  MODE ALERTES (ne trade pas)" : ""), "\n",
+   Comment("EMYO AMD  |  ", _Symbol, (AlertsOnly ? "  |  MODE ALERTES (ne trade pas)" : ""), "\n",
            "Session : ", (IsTradingHour() ? "OUVERTE" : "fermée"),
            "  (New York ", TimeToString(NewYorkTime(), TIME_MINUTES), ")\n",
-           "Tendance de fond : ", (bias == 1 ? "HAUSSIÈRE" : (bias == -1 ? "BAISSIÈRE" : "aucune")),
-           "  |  order blocks suivis : ", ArraySize(blocks), "\n",
+           "Tendance de fond : ", (bias == 1 ? "HAUSSIÈRE" : (bias == -1 ? "BAISSIÈRE" : "aucune")), "\n",
+           "Range asiatique : ", range, "\n",
            "Positions ouvertes : ", openCount,
            "  |  en cours : ", DoubleToString(FloatingProfit(), 2), " ", currency, "\n",
            "Positions du jour : ", tradesToday,
@@ -954,10 +847,18 @@ void OnTick()
    if(!IsNewBar())
       return;
 
-   FindOrderBlocks();
+   bool rangeReady = UpdateAsiaRange();
    UpdatePanel();
 
-   if(!IsTradingHour())
+   if(!rangeReady || !IsTradingHour())
+      return;
+
+   if(signalDay != asiaDay)
+   {
+      signalDay    = asiaDay;
+      signalsToday = 0;
+   }
+   if(signalsToday >= MaxSignalsPerDay)
       return;
 
    int openDirection = 0;
@@ -966,42 +867,34 @@ void OnTick()
    if(room <= 0)
       return;
 
-   if(openCount > 0 && AddOnlyWhenProtected && !AllPositionsProtected())
+   if(openCount > 0 && !AllPositionsProtected())
       return;
 
    int    tradesToday = 0;
    double profitToday = 0;
    GetTodayStats(tradesToday, profitToday);
 
-   if(MaxTradesPerDay > 0 && tradesToday >= MaxTradesPerDay)
-      return;
-
    if(MaxDailyLossPercent > 0 &&
       profitToday + FloatingProfit() <= -AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100.0)
       return;
 
-   if(DailyProfitTargetMoney > 0 && profitToday >= DailyProfitTargetMoney)
-      return;
-
-   // 1) Tendance de fond
+   // 1) Tendance de fond : la manipulation doit aller contre elle
    int bias = GetBias();
    if(bias == 0)
       return;
    if(openDirection != 0 && openDirection != bias)
       return;
 
-   // 2) Bougies M1 pour la confirmation
+   // 2) Bougies M1
    int size = ConfirmLookback + ChochMaxBars + PivotStrength + 2;
-   double open[], high[], low[], close[];
+   double high[], low[], close[];
    datetime time[];
-   ArraySetAsSeries(open, true);
    ArraySetAsSeries(high, true);
    ArraySetAsSeries(low, true);
    ArraySetAsSeries(close, true);
    ArraySetAsSeries(time, true);
 
    if(CopyTime (_Symbol, PERIOD_M1, 0, size, time)  < size ||
-      CopyOpen (_Symbol, PERIOD_M1, 0, size, open)  < size ||
       CopyHigh (_Symbol, PERIOD_M1, 0, size, high)  < size ||
       CopyLow  (_Symbol, PERIOD_M1, 0, size, low)   < size ||
       CopyClose(_Symbol, PERIOD_M1, 0, size, close) < size)
@@ -1011,35 +904,32 @@ void OnTick()
    if(atr <= 0)
       return;
 
-   // 3) Un order block dans le sens de la tendance + une confirmation
-   for(int b = 0; b < ArraySize(blocks); b++)
+   // 3) Manipulation + retour dans le range + CHoCH
+   double stopPrice = 0, target = 0;
+   if(!CheckAmdSignal(bias, time, high, low, close, size, atr, stopPrice, target))
+      return;
+
+   double entry = (bias == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double risk  = (bias == 1) ? entry - stopPrice : stopPrice - entry;
+   if(risk < MinRiskAtr * atr || risk > MaxRiskAtr * atr)
+      return;
+
+   if(TargetMode == TARGET_LIQUIDITY)
    {
-      if(blocks[b].dir != bias || IsBlockUsed(blocks[b].time))
-         continue;
-
-      double stopPrice = 0;
-      if(!CheckConfirmation(blocks[b], time, open, high, low, close, size, atr, stopPrice))
-         continue;
-
-      double entry = (bias == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      double risk  = (bias == 1) ? entry - stopPrice : stopPrice - entry;
-      if(risk < MinRiskAtr * atr || risk > MaxRiskAtr * atr)
-         continue;
-
-      int count = (int)MathMin(TradesPerSignal, room);
-      if(MaxTradesPerDay > 0)
-         count = (int)MathMin(count, MaxTradesPerDay - tradesToday);
-
-      Print("Signal ", (bias == 1 ? "ACHAT" : "VENTE"), " sur order block de ",
-            TimeToString(blocks[b].time, TIME_DATE | TIME_MINUTES),
-            " [", DoubleToString(blocks[b].bottom, _Digits), " - ", DoubleToString(blocks[b].top, _Digits), "]");
-
-      MarkBlockUsed(blocks[b].time);   // un seul signal par bloc, même si l'ordre échoue
-      SendSignalAlert(bias, entry, stopPrice, count, blocks[b]);
-
-      if(!AlertsOnly)
-         OpenBasket(bias, stopPrice, count);
-      break;
+      double toTarget = (bias == 1) ? target - entry : entry - target;
+      if(toTarget < MinFirstTargetRR * risk)
+         return;                                    // objectif trop proche pour le risque pris
    }
+
+   int count = (int)MathMin(TradesPerSignal, room);
+   signalsToday++;
+
+   Print("Signal AMD ", (bias == 1 ? "ACHAT" : "VENTE"), " | range asiatique [",
+         DoubleToString(asiaLow, _Digits), " - ", DoubleToString(asiaHigh, _Digits), "]");
+
+   SendSignalAlert(bias, entry, stopPrice, target, count);
+
+   if(!AlertsOnly)
+      OpenBasket(bias, stopPrice, target, count);
 }
 //+------------------------------------------------------------------+
