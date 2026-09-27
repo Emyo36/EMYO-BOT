@@ -351,3 +351,10 @@ BTC (FP 1,04) et l'EURUSD (FP 0,93), le +164 $ de l'or (FP 1,10) ressemble plus 
 résultat propre à l'or (ou à de la chance) qu'à un avantage général de la méthode.
 Prochain contrôle proposé : DJ30.
 
+### 2026-09-27 — Contrôle DJ30 (symbole « DJ30. ») : EMYO SMC, 01/01/2025 → 01/09/2026
+
+**0 trade** (588 268 barres, 43 % ticks réels, données OK). Cause la plus probable : `Lots = 0.01`
+inférieur au **volume minimal** du DJ30 chez VT Markets → `CalculateLots` renvoie 0
+(« Lot calculé trop petit » dans le journal). À relancer avec `Lots` = volume minimal du symbole
+(Ctrl+U → DJ30. → Spécification).
+
