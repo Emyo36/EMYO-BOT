@@ -331,3 +331,22 @@ Plan retenu : validation **en démo, en parallèle** : sur l'or et le Bitcoin, u
 « référence » (magic 360037) et un « risque min 1.5 » (`SMC_2_risque_min_1.5.set`, magic passé
 à **360038** pour que les deux ne se gênent pas sur le même symbole). Option alternative :
 backtester 2022–2024 chez un autre courtier (compte démo avec historique plus long).
+
+### 2026-09-27 — Contrôle EURUSD : EMYO SMC v1.03 (réglages de référence), M1, 01/01/2025 → 01/09/2026
+
+Test sur un 2e marché pour remplacer le Bitcoin comme contrôle. Compte VT Markets (devise du
+rapport : **EUR**), dépôt 1 000, lot fixe 0,01. Qualité d'historique 45 % ticks réels.
+(Tentative sur MetaQuotes-Demo avant : « no history data / history check timeout ».)
+
+- **−9,44 €** (−0,9 %), facteur de profit **0,93**, 456 positions = **152 signaux**,
+  48 % gagnantes. Gain moyen 0,54 € = perte moyenne 0,54 € → pas d'avantage.
+- Drawdown max **3,2 %** seulement (SL médian ~5,5 pips → ~0,5 € par position au lot 0,01).
+- Sorties : 104 TP (+96 €), 276 SL (−115 €, dont les break-even), 76 fins de session (+9,5 €).
+- 9 mois positifs sur 20, aucun mois marquant ; 2025 −2 €, 2026 −17 €.
+- Ventes 55 % gagnantes, achats 41 % (les ventes font mieux, comme sur l'or ; pas sur le BTC).
+
+Conclusion : sur l'EURUSD la stratégie est **à l'équilibre / légèrement perdante**. Avec le
+BTC (FP 1,04) et l'EURUSD (FP 0,93), le +164 $ de l'or (FP 1,10) ressemble plus à un
+résultat propre à l'or (ou à de la chance) qu'à un avantage général de la méthode.
+Prochain contrôle proposé : DJ30.
+
