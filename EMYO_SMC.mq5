@@ -4,7 +4,7 @@
 //|  bougie englobante). Or, Bitcoin, NASDAQ - session américaine.    |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.04"
+#property version   "1.05"
 
 #include <Trade\Trade.mqh>
 
@@ -86,6 +86,9 @@ input int    NyEndHour          = 16;    // Fin, heure de New York
 input int    NyEndMinute        = 0;
 input bool   WeekdaysOnly       = true;  // Lundi à vendredi uniquement (heure de New York)
 input bool   CloseOutsideSession = true; // Fermer les positions à la fin de la session
+input bool   EarlyCloseOnHolidays = true; // Jours fériés US (cotation réduite) : fin de session avancée
+input int    HolidayEndHour     = 12;    // Fin de session ces jours-là, heure de New York
+input int    HolidayEndMinute   = 30;
 input int    ServerGmtOffset    = 99;    // Décalage GMT du serveur en heures (99 = auto)
 input int    StartHour          = 0;     // Mode serveur : heure de début
 input int    EndHour            = 0;     // Mode serveur : heure de fin (exclue)
@@ -128,6 +131,7 @@ int OnInit()
       SlBufferAtr < 0 || MinRiskAtr < 0 || MaxRiskAtr <= MinRiskAtr ||
       NyStartHour < 0 || NyStartHour > 23 || NyEndHour < 0 || NyEndHour > 23 ||
       NyStartMinute < 0 || NyStartMinute > 59 || NyEndMinute < 0 || NyEndMinute > 59 ||
+      HolidayEndHour < 0 || HolidayEndHour > 23 || HolidayEndMinute < 0 || HolidayEndMinute > 59 ||
       StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23 ||
       Lots <= 0 || RiskPercent < 0 || TargetProfitMoney < 0 || MaxProfitAtMinLot < 0 || MaxLots <= 0)
    {
@@ -224,6 +228,37 @@ datetime NewYorkTime()
    return gmt + (IsUsDst(gmt) ? -4 : -5) * 3600;
 }
 
+// Jours fériés américains : l'or cote en séance réduite et s'arrête vers 13h New York,
+// avant la fin normale de la session. Ces jours-là, la session se termine plus tôt
+// (HolidayEndHour:HolidayEndMinute) pour pouvoir fermer les positions avant l'arrêt.
+bool IsObservedHoliday(const MqlDateTime &d, int mon, int day)
+{
+   if(d.mon != mon)
+      return false;
+   if(d.day == day && d.day_of_week >= 1 && d.day_of_week <= 5)
+      return true;
+   if(d.day == day - 1 && d.day_of_week == 5)   // tombe un samedi : vendredi
+      return true;
+   return d.day == day + 1 && d.day_of_week == 1; // tombe un dimanche : lundi
+}
+
+bool IsUsShortDay(datetime nyTime)
+{
+   MqlDateTime d;
+   TimeToStruct(nyTime, d);
+   int nth = (d.day - 1) / 7 + 1;                 // 1er, 2e, 3e... jour de ce type dans le mois
+
+   if(d.day_of_week == 1 && d.mon == 1 && nth == 3) return true;          // Martin Luther King
+   if(d.day_of_week == 1 && d.mon == 2 && nth == 3) return true;          // Presidents' Day
+   if(d.day_of_week == 1 && d.mon == 5 && d.day + 7 > 31) return true;    // Memorial Day
+   if(d.day_of_week == 1 && d.mon == 9 && nth == 1) return true;          // Labor Day
+   if(d.day_of_week == 4 && d.mon == 11 && nth == 4) return true;         // Thanksgiving
+   if(d.day_of_week == 5 && d.mon == 11 && (d.day - 2) / 7 + 1 == 4) return true; // lendemain de Thanksgiving
+   if(d.mon == 7 && d.day == 3 && d.day_of_week >= 1 && d.day_of_week <= 4) return true; // veille du 4 juillet
+   if(d.mon == 12 && d.day == 24 && d.day_of_week >= 1 && d.day_of_week <= 5) return true; // veille de Noël
+   return IsObservedHoliday(d, 6, 19) || IsObservedHoliday(d, 7, 4) || IsObservedHoliday(d, 12, 25);
+}
+
 bool IsTradingHour()
 {
    if(SessionMode == SESSION_ALWAYS)
@@ -241,6 +276,8 @@ bool IsTradingHour()
       int minutes = now.hour * 60 + now.min;
       int start   = NyStartHour * 60 + NyStartMinute;
       int end     = NyEndHour   * 60 + NyEndMinute;
+      if(EarlyCloseOnHolidays && IsUsShortDay(NewYorkTime()))
+         end = (int)MathMin(end, HolidayEndHour * 60 + HolidayEndMinute);
 
       if(start < end)
          return minutes >= start && minutes < end;

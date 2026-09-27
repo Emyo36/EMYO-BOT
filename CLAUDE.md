@@ -47,7 +47,7 @@ Un Expert Advisor **MetaTrader 5** (`EMYO_BOT.mq5`) de scalping qui accumule
   relue avec soin et recompilée par l'utilisateur.
 - Le README détaille la stratégie et chaque paramètre ; le garder synchronisé avec le code.
 
-## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.04 ; v1.03 compilé OK)
+## Deuxième bot : EMYO SMC (`EMYO_SMC.mq5`, v1.05 ; v1.03 compilé OK)
 
 Créé le 2026-09-24 à partir d'une vidéo ICT/SMC envoyée par l'utilisateur (transcription) :
 tendance H1+H4 (EMA 50), order block M5 (dernière bougie contraire avant impulsion ≥ 1,5 ATR),
@@ -62,7 +62,7 @@ v1.04 (2026-09-27, 2e vidéo SMC de Casper) : options **désactivées par défau
 `RequireImbalance` (FVG dans l'impulsion du bloc) et `RequireOte` (correction entre 0,618 et
 0,786 de l'impulsion). Presets `SMC_4_imbalance.set`, `SMC_5_ote.set`. Pas encore compilé.
 
-## Troisième bot : EMYO AMD (`EMYO_AMD.mq5`, v1.01 ; v1.00 compilé OK, 2026-09-27)
+## Troisième bot : EMYO AMD (`EMYO_AMD.mq5`, v1.02 ; v1.00 compilé OK, 2026-09-27)
 
 Même vidéo : Accumulation (range asiatique 20h–0h New York), Manipulation (mèche au-delà du
 range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Distribution
@@ -72,7 +72,7 @@ range **contre** la tendance H1+H4 pendant la session US, extrême du jour), Dis
 copiée par erreur → retirée ; **recompilé sans erreur** par l'utilisateur le 27/09. Presets `AMD_1_reference.set`,
 `AMD_2_objectifs_R.set`. Le script `presets` est régénéré à partir des `input` du code.
 
-## Quatrième bot : EMYO TREND (`EMYO_TREND.mq5`, v1.02 intraday, 2026-09-27)
+## Quatrième bot : EMYO TREND (`EMYO_TREND.mq5`, v1.03 intraday ; v1.02 compilé et testé, 2026-09-27)
 
 Demande de l'utilisateur (« fais-le maintenant ») après le bilan SMC ≈ équilibre : changer
 d'approche. Suivi de tendance H4 : EMA 200 (filtre), cassure du canal de Donchian 20 (entrée),
@@ -408,4 +408,22 @@ DJ30 1,02 ; EURUSD 0,93. Tout est autour de l'équilibre ; seul l'or dépasse ne
 grâce à quelques gros gains. **Conclusion : pas d'avantage démontré de la méthode** ; les coûts
 réels (spread, glissement en réel) suffiraient probablement à rendre le tout perdant.
 La démo sur l'or reste le juge ; ne pas passer en réel sur la seule base de ces backtests.
+
+### 2026-09-27 — 1er backtest EMYO TREND v1.02 (intraday), XAUUSD-STD M5, 01/01/2025 → 01/09/2026
+
+Mode OHLC M1 (98 %), **dépôt 1 000** (pas 10 000 comme conseillé), réglages de référence.
+- **+97,74 €** (+9,8 %), facteur de profit **1,03**, 591 trades, **38 % gagnants**, gain moyen
+  13,81 € / perte moyenne 8,28 € (1,67 : 1) — profil « tendance » comme prévu.
+- **Drawdown max 28 %** (−298 €) : bien trop élevé pour le gain. 2025 **−118 €**, 2026 **+216 €** ;
+  9 mois positifs sur 20. Les 10 meilleurs trades = +645 € → sans eux, perdant. Fragile.
+- Heures d'entrée (serveur) mélangées : 17h +188, 21h +110, 20h −129, 19h −75 (pas de schéma net).
+- **Bug trouvé** : 4 positions gardées la nuit (dont 2 le week-end), swap −11 €. Toutes des
+  **jours fériés US** (26/05, 04/07, 28/11, 24/12/2025) : l'or arrête de coter vers 13h NY, plus de
+  tick à 16h pour fermer. **Corrigé** dans SMC v1.05, AMD v1.02, TREND v1.03 :
+  `EarlyCloseOnHolidays` (fin de session 12h30 NY les jours fériés / séances réduites US, règles
+  calculées : MLK, Presidents, Memorial, Juneteenth, 3-4 juillet, Labor, Thanksgiving + lendemain,
+  24-25 décembre). Liste 2025-2026 vérifiée en Python.
+
+Bilan : EMYO TREND ≈ EMYO SMC (FP ~1,0), avec plus de drawdown. À refaire sur **2023 → 2026**
+avec dépôt 10 000 pour avoir plus de données, sans rien changer.
 

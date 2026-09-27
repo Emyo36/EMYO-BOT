@@ -237,6 +237,10 @@ longue, l'entrée se fait sur une cassure courte, et les gains courent jusqu'au 
    rien ne reste ouvert la nuit ni le week-end, donc **pas de swap**. Une position à la fois,
    3 entrées par jour au maximum, pas de nouvelle entrée après −3 % dans la journée.
 
+**Jours fériés américains** (EMYO SMC, AMD et TREND, `EarlyCloseOnHolidays`) : ces jours-là l'or
+arrête de coter vers 13h New York ; la session se termine donc à 12h30 NY pour que les positions
+soient fermées avant l'arrêt (sinon elles restaient ouvertes jusqu'à la réouverture).
+
 Taux de réussite attendu faible (30–40 %) : le bot compte sur des gains plus gros que les pertes.
 Backtest conseillé : `presets/TREND_1_reference.set`, or, graphique M5, mode « OHLC sur M1 »,
 01/01/2023 → 01/09/2026, dépôt 10 000 (avec 1 000, le lot minimum de l'or dépasse souvent 1 %).
