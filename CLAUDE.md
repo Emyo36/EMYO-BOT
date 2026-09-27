@@ -96,6 +96,19 @@ connecter → indicateur Pine Script v5 qui reproduit EMYO SMC (1 order block pa
 envoie `alert()` avec entrée/SL/TP. Alertes côté serveur TradingView (PC éteint possible).
 **Jamais compilé** dans TradingView au moment de sa création : demander les erreurs éventuelles.
 
+## Outil « Claude vs TradingView » (installé sur le PC de l'utilisateur, 2026-09-27)
+
+Serveur MCP tiers (kaspertrading/claudeverstradingview, 81 outils, via Chrome DevTools Protocol
+port 9222) qui pilote **TradingView Desktop** depuis l'**application Claude du PC** (pas depuis
+cette session cloud). Installé dans `C:\Users\YVES OMEGA\claudeverstradingview` (le fork
+Emyo36 n'existait pas → dépôt original). Ajouté dans `%APPDATA%\Claude\claude_desktop_config.json`
+(`mcpServers`, fermer Claude avant d'éditer sinon il écrase le fichier) → statut « En cours ».
+TradingView doit être lancé avec `scripts\launch_tv_debug.bat`. `rules.json` : proposé de mettre
+l'or + EMA 50/200 + RSI H4 et nos règles de risque. Claude Code en ligne de commande : échec
+(npm → claude.exe invalide ; installateur officiel bloqué par Cloudflare) → inutile ici.
+Précautions données : ne pas relier le courtier à TradingView, fermer TradingView après usage.
+Le code n'a pas pu être relu par Claude (accès au dépôt refusé dans l'environnement cloud).
+
 ## Points de vigilance connus
 
 - Un panier de 3 positions perdu avant le break-even ≈ 5,20 € de perte pour 6 € de gain
