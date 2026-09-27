@@ -1,15 +1,21 @@
 //+------------------------------------------------------------------+
-//|             EMYO TREND - SUIVI DE TENDANCE (H4 par défaut)        |
-//|  Filtre EMA 200, entrée sur cassure du canal de Donchian (sur H4  |
-//|  ou sur une unité plus courte, ex. M5), stop initial en ATR,      |
-//|  sortie par stop suiveur sur le canal court (H4 par défaut).      |
-//|  Peu de trades, gains laissés courir, positions sur plusieurs     |
-//|  jours (week-ends compris).                                       |
+//|             EMYO TREND - SUIVI DE TENDANCE INTRADAY               |
+//|  Tendance H4 (EMA 200), entrée sur cassure du canal M5, stop      |
+//|  initial en ATR M5, stop suiveur sur le canal M15. Session        |
+//|  américaine uniquement : tout est fermé en fin de session         |
+//|  (rien la nuit ni le week-end, donc pas de swap).                 |
 //+------------------------------------------------------------------+
 #property copyright "EMYO"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
+
+enum ENUM_SESSION_MODE
+{
+   SESSION_NEW_YORK = 0,  // Session américaine (heure de New York)
+   SESSION_SERVER   = 1,  // Plage StartHour / EndHour (heure serveur)
+   SESSION_ALWAYS   = 2   // 24h/24 (positions possibles la nuit et le week-end)
+};
 
 //---------------------- PARAMÈTRES DU BOT --------------------------
 input group "Risque"
@@ -19,8 +25,8 @@ input double MaxLots            = 1.0;   // Lot maximum
 
 input group "Signal"
 input ENUM_TIMEFRAMES TrendTimeframe = PERIOD_H4; // Unité de temps de la tendance (EMA)
-input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_H4; // Unité de temps de l'entrée (cassure + ATR du stop), ex. M5
-input ENUM_TIMEFRAMES ExitTimeframe  = PERIOD_H4; // Unité de temps de la sortie (stop suiveur)
+input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M5; // Unité de temps de l'entrée (cassure + ATR du stop)
+input ENUM_TIMEFRAMES ExitTimeframe  = PERIOD_M15; // Unité de temps de la sortie (stop suiveur)
 input int    TrendEmaPeriod     = 200;   // Filtre : achats au-dessus de l'EMA, ventes en dessous
 input int    EntryChannel       = 20;    // Entrée : clôture au-delà du plus haut / plus bas des N bougies précédentes
 input int    ExitChannel        = 10;    // Sortie : stop suiveur sur le plus bas / plus haut des N dernières bougies
@@ -32,12 +38,24 @@ input bool   AllowShort         = true;  // Autoriser les ventes
 input group "Filtres"
 input double MaxSpreadPercentOfRisk = 10; // Spread max. en % du risque (0 = off)
 
+input group "Session de trading"
+input ENUM_SESSION_MODE SessionMode = SESSION_NEW_YORK;
+input int    NyStartHour        = 9;     // Début, heure de New York
+input int    NyStartMinute      = 30;
+input int    NyEndHour          = 16;    // Fin, heure de New York
+input int    NyEndMinute        = 0;
+input bool   WeekdaysOnly       = true;  // Lundi à vendredi uniquement (heure de New York)
+input bool   CloseOutsideSession = true; // Fermer la position à la fin de la session (pas de nuit, pas de swap)
+input int    ServerGmtOffset    = 99;    // Décalage GMT du serveur en heures (99 = auto)
+input int    StartHour          = 0;     // Mode serveur : heure de début
+input int    EndHour            = 0;     // Mode serveur : heure de fin (exclue)
+
 input group "Sécurité"
-input int    MaxTradesPerDay    = 0;     // Entrées par jour au maximum (0 = illimité ; conseillé 3 en entrée M5)
+input int    MaxTradesPerDay    = 3;     // Entrées par jour au maximum (0 = illimité)
 input double MaxDailyLossPercent = 3;    // Pas de nouvelle entrée après cette perte du jour, positions ouvertes comprises (0 = off)
 input ulong  MagicNumber        = 360040;
 input bool   SendPushAlerts     = true;  // Envoyer chaque entrée sur le téléphone (MetaQuotes ID)
-input bool   AutoCloseOnStop    = false; // Fermer la position si le bot est retiré (déconseillé : trades sur plusieurs jours)
+input bool   AutoCloseOnStop    = true;  // Fermer la position quand le bot est retiré
 input bool   ShowPanel          = true;  // Afficher les informations sur le graphique
 
 //---------------------- VARIABLES GLOBALES --------------------------
@@ -54,7 +72,10 @@ int OnInit()
 {
    if(RiskPercent <= 0 || MaxRiskPercentAtMinLot < 0 || MaxLots <= 0 || TrendEmaPeriod < 1 ||
       EntryChannel < 2 || ExitChannel < 2 || AtrPeriod < 1 || StopAtr <= 0 ||
-      MaxSpreadPercentOfRisk < 0 || MaxDailyLossPercent < 0 || MaxTradesPerDay < 0 || (!AllowLong && !AllowShort))
+      MaxSpreadPercentOfRisk < 0 || MaxDailyLossPercent < 0 || MaxTradesPerDay < 0 || (!AllowLong && !AllowShort) ||
+      NyStartHour < 0 || NyStartHour > 23 || NyEndHour < 0 || NyEndHour > 23 ||
+      NyStartMinute < 0 || NyStartMinute > 59 || NyEndMinute < 0 || NyEndMinute > 59 ||
+      StartHour < 0 || StartHour > 23 || EndHour < 0 || EndHour > 23)
    {
       Print("Erreur : paramètres invalides");
       return(INIT_PARAMETERS_INCORRECT);
@@ -73,7 +94,9 @@ int OnInit()
 
    Print("EMYO TREND lancé sur ", _Symbol, " | tendance ", EnumToString(TrendTimeframe),
          " | entrée ", EnumToString(EntryTimeframe), " | sortie ", EnumToString(ExitTimeframe),
-         " | risque ", DoubleToString(RiskPercent, 2), " % par trade");
+         " | risque ", DoubleToString(RiskPercent, 2), " % par trade",
+         " | heure de New York : ", TimeToString(NewYorkTime(), TIME_DATE | TIME_MINUTES),
+         " | session ", (IsTradingHour() ? "ouverte" : "fermée"));
    UpdatePanel();
    return(INIT_SUCCEEDED);
 }
@@ -92,6 +115,88 @@ void OnDeinit(const int reason)
 
    Comment("");
    Print("EMYO TREND arrêté");
+}
+
+//+----------------------- SESSION / HEURES -------------------------+
+// Date du n-ième dimanche d'un mois (à minuit)
+datetime NthSunday(int year, int month, int n)
+{
+   MqlDateTime dt;
+   ZeroMemory(dt);
+   dt.year = year;
+   dt.mon  = month;
+   dt.day  = 1;
+   datetime first = StructToTime(dt);
+   TimeToStruct(first, dt);
+
+   int firstSunday = 1 + (7 - dt.day_of_week) % 7;
+   return first + (firstSunday - 1 + 7 * (n - 1)) * 86400;
+}
+
+// Heure d'été américaine : du 2e dimanche de mars 2h (7h GMT)
+// au 1er dimanche de novembre 2h (6h GMT)
+bool IsUsDst(datetime gmt)
+{
+   MqlDateTime dt;
+   TimeToStruct(gmt, dt);
+
+   datetime start = NthSunday(dt.year, 3, 2)  + 7 * 3600;
+   datetime end   = NthSunday(dt.year, 11, 1) + 6 * 3600;
+   return gmt >= start && gmt < end;
+}
+
+// Décalage GMT du serveur, en secondes
+int ServerOffsetSeconds()
+{
+   if(ServerGmtOffset != 99)
+      return ServerGmtOffset * 3600;
+
+   // En backtest, TimeGMT() n'est pas fiable : on suppose le réglage le plus
+   // courant des courtiers MT5 (GMT+2 l'hiver, GMT+3 pendant l'heure d'été US).
+   if(MQLInfoInteger(MQL_TESTER))
+      return (IsUsDst(TimeCurrent() - 2 * 3600) ? 3 : 2) * 3600;
+
+   double diff = (double)(TimeTradeServer() - TimeGMT());
+   return (int)(MathRound(diff / 1800.0) * 1800);
+}
+
+datetime NewYorkTime()
+{
+   datetime gmt = TimeCurrent() - ServerOffsetSeconds();
+   return gmt + (IsUsDst(gmt) ? -4 : -5) * 3600;
+}
+
+bool IsTradingHour()
+{
+   if(SessionMode == SESSION_ALWAYS)
+      return true;
+
+   MqlDateTime now;
+
+   if(SessionMode == SESSION_NEW_YORK)
+   {
+      TimeToStruct(NewYorkTime(), now);
+
+      if(WeekdaysOnly && (now.day_of_week == 0 || now.day_of_week == 6))
+         return false;
+
+      int minutes = now.hour * 60 + now.min;
+      int start   = NyStartHour * 60 + NyStartMinute;
+      int end     = NyEndHour   * 60 + NyEndMinute;
+
+      if(start < end)
+         return minutes >= start && minutes < end;
+      return minutes >= start || minutes < end;
+   }
+
+   if(StartHour == EndHour)
+      return true;
+
+   TimeToStruct(TimeCurrent(), now);
+
+   if(StartHour < EndHour)
+      return now.hour >= StartHour && now.hour < EndHour;
+   return now.hour >= StartHour || now.hour < EndHour;
 }
 
 //+----------------------- COMPTE / POSITIONS -----------------------+
@@ -305,6 +410,8 @@ void UpdatePanel()
 
    Comment("EMYO TREND  |  ", _Symbol, "  |  tendance ", EnumToString(TrendTimeframe),
            "  |  entrée ", EnumToString(EntryTimeframe), "  |  sortie ", EnumToString(ExitTimeframe), "\n",
+           "Session : ", (IsTradingHour() ? "OUVERTE" : "fermée"),
+           "  (New York ", TimeToString(NewYorkTime(), TIME_MINUTES), ")\n",
            "Tendance (EMA ", TrendEmaPeriod, ") : ", trend, "\n",
            "Achat si clôture > ", DoubleToString(lastUpper, _Digits),
            "  |  Vente si clôture < ", DoubleToString(lastLower, _Digits), "\n",
@@ -320,7 +427,14 @@ void OnTrade()
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Tout se décide une fois par bougie clôturée de l'unité de temps de l'entrée
+   // Fin de session : on ferme tout (rien ne reste ouvert la nuit ni le week-end)
+   if(CloseOutsideSession && !IsTradingHour() && SelectOwnPosition() != 0)
+   {
+      ClosePositions();
+      Print("Fin de session : position fermée.");
+   }
+
+   // Tout le reste se décide une fois par bougie clôturée de l'unité de temps de l'entrée
    datetime barTime = iTime(_Symbol, EntryTimeframe, 0);
    if(barTime == 0 || barTime == lastBarTime)
       return;
@@ -360,7 +474,13 @@ void OnTick()
       return;
    }
 
-   // 2) Garde-fous : nombre d'entrées et perte maximale du jour
+   // 2) Garde-fous : session, nombre d'entrées et perte maximale du jour
+   if(!IsTradingHour())
+   {
+      UpdatePanel();
+      return;
+   }
+
    datetime now      = TimeCurrent();
    datetime dayStart = now - (now % 86400);
    if(MaxTradesPerDay > 0 && EntriesSince(dayStart) >= MaxTradesPerDay)

@@ -221,34 +221,25 @@ Jamais compilé au moment de sa création : envoyer les erreurs éventuelles de 
 
 # EMYO TREND (`EMYO_TREND.mq5`)
 
-Quatrième bot, **approche différente** : suivi de tendance sur **H4**, peu de trades, gains
-laissés courir (méthode type « Turtles » / fonds trend following). Numéro magique 360040.
+Quatrième bot : **suivi de tendance intraday**. La tendance est lue sur une unité de temps
+longue, l'entrée se fait sur une cassure courte, et les gains courent jusqu'au stop suiveur ou
+à la fin de la session. Numéro magique 360040.
 
-1. **Filtre** : achats seulement au-dessus de l'EMA 200 H4, ventes seulement en dessous.
-2. **Entrée** : une bougie H4 clôture au-dessus du plus haut des 20 bougies précédentes
+1. **Tendance** : achats seulement au-dessus de l'EMA 200 **H4**, ventes seulement en dessous.
+2. **Entrée** : une bougie **M5** clôture au-dessus du plus haut des 20 bougies M5 précédentes
    (achat), ou sous leur plus bas (vente).
-3. **Stop initial** à 2 ATR (20) du prix d'entrée. **Pas de TP.**
+3. **Stop initial** à 2 ATR(20) **M5**. **Pas de TP.**
 4. **Sortie** : stop suiveur sur le plus bas (achat) / plus haut (vente) des 10 dernières
-   bougies H4, mis à jour à chaque clôture H4.
-5. **Taille** : 1 % du solde risqué par trade (`RiskPercent`). Si même le lot minimum
-   risque plus de 3 % (`MaxRiskPercentAtMinLot`), le trade est ignoré (message dans le journal).
-6. Une seule position à la fois ; pas de nouvelle entrée après −3 % dans la journée.
+   bougies **M15**, ou **fermeture en fin de session**.
+5. **Taille** : 1 % du solde risqué par trade (`RiskPercent`). Si même le lot minimum risque
+   plus de 3 % (`MaxRiskPercentAtMinLot`), le trade est ignoré (message dans le journal).
+6. **Session américaine uniquement** (9h30–16h00 New York) et **tout est fermé à 16h00** :
+   rien ne reste ouvert la nuit ni le week-end, donc **pas de swap**. Une position à la fois,
+   3 entrées par jour au maximum, pas de nouvelle entrée après −3 % dans la journée.
 
-Différences voulues avec les autres bots : **24h/24**, positions gardées **plusieurs jours et
-le week-end** (frais de swap, risque d'écart à la réouverture), taux de réussite attendu
-faible (30–40 %) compensé par des gains bien plus gros que les pertes.
-
-**Option entrée M5** (v1.01, `presets/TREND_2_entree_M5.set`) : la tendance reste lue en H4
-(EMA 200 H4) et la sortie reste le stop suiveur H4, mais l'**entrée** se fait sur une cassure du
-canal 20 **M5** avec un stop à 2 ATR **M5** (`EntryTimeframe = M5`, 3 entrées par jour maximum).
-Stop plus serré → lot plus gros pour le même risque et meilleur rapport gain/risque quand la
-tendance part, mais aussi beaucoup plus de stops touchés par le bruit (c'est ce qui faisait
-perdre les stops serrés d'EMYO SMC) : à comparer au réglage tout H4 sur la même période.
-
-Attention à la taille du compte : sur l'or, un stop de 2 ATR H4 représente souvent 40 à 80 $
-au lot minimum 0,01, soit 4 à 8 % d'un compte de 1 000 → trades ignorés. Backtester avec un
-dépôt de 10 000 pour juger la méthode (`presets/TREND_1_reference.set`, mode « OHLC sur M1 »,
-graphique H4, période la plus longue disponible : 2023 → 2026).
+Taux de réussite attendu faible (30–40 %) : le bot compte sur des gains plus gros que les pertes.
+Backtest conseillé : `presets/TREND_1_reference.set`, or, graphique M5, mode « OHLC sur M1 »,
+01/01/2023 → 01/09/2026, dépôt 10 000 (avec 1 000, le lot minimum de l'or dépasse souvent 1 %).
 
 ---
 

@@ -1,10 +1,10 @@
-; EMYO TREND - reglages par defaut (tout en H4, EMA 200, canal 20/10, stop 2 ATR, risque 1 %)
+; EMYO TREND - intraday : tendance H4 (EMA 200), entree cassure M5, stop 2 ATR M5, sortie canal M15, session US, tout ferme en fin de session
 RiskPercent=1.0
 MaxRiskPercentAtMinLot=3.0
 MaxLots=1.0
 TrendTimeframe=16388
-EntryTimeframe=16388
-ExitTimeframe=16388
+EntryTimeframe=5
+ExitTimeframe=15
 TrendEmaPeriod=200
 EntryChannel=20
 ExitChannel=10
@@ -13,9 +13,19 @@ StopAtr=2.0
 AllowLong=true
 AllowShort=true
 MaxSpreadPercentOfRisk=10
-MaxTradesPerDay=0
+SessionMode=0
+NyStartHour=9
+NyStartMinute=30
+NyEndHour=16
+NyEndMinute=0
+WeekdaysOnly=true
+CloseOutsideSession=true
+ServerGmtOffset=99
+StartHour=0
+EndHour=0
+MaxTradesPerDay=3
 MaxDailyLossPercent=3
 MagicNumber=360040
 SendPushAlerts=true
-AutoCloseOnStop=false
+AutoCloseOnStop=true
 ShowPanel=true
